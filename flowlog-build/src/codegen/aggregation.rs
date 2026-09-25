@@ -52,12 +52,22 @@ pub(super) fn aggregation_empty_key(arity: usize) -> TokenStream {
 /// An incremental aggregate reads the union directly. Its `i32` reduce sees
 /// each distinct row once, with the number of derivations as its count, and
 /// uses the row while that count is positive: the rows dedup would keep. A
-/// batch reduce receives `Present` rows, which carry no count, so only
-/// dedup keeps a repeated derivation from contributing twice.
-pub(super) fn union_needs_dedup(mode: ExecutionMode, aggregated: bool) -> bool {
-    match mode {
-        ExecutionMode::Batch => true,
-        ExecutionMode::Inc => !aggregated,
+/// batch reduce receives `Present` rows, which carry no count. A repeated
+/// derivation cannot move a min or max, but count, sum, and average would
+/// include it again, so only they need dedup.
+pub(super) fn union_needs_dedup(
+    mode: ExecutionMode,
+    aggregation: Option<AggregationOperator>,
+) -> bool {
+    match (mode, aggregation) {
+        (_, None) => true,
+        (ExecutionMode::Inc, Some(_)) => false,
+        (ExecutionMode::Batch, Some(op)) => match op {
+            AggregationOperator::Min | AggregationOperator::Max => false,
+            AggregationOperator::Count | AggregationOperator::Sum | AggregationOperator::Avg => {
+                true
+            }
+        },
     }
 }
 
@@ -145,16 +155,21 @@ mod tests {
     }
 
     #[rstest]
-    #[case(ExecutionMode::Batch, false, true)]
-    #[case(ExecutionMode::Batch, true, true)]
-    #[case(ExecutionMode::Inc, false, true)]
-    #[case(ExecutionMode::Inc, true, false)]
-    fn only_incremental_aggregates_read_their_union_without_dedup(
+    #[case(ExecutionMode::Batch, None, true)]
+    #[case(ExecutionMode::Batch, Some(AggregationOperator::Min), false)]
+    #[case(ExecutionMode::Batch, Some(AggregationOperator::Max), false)]
+    #[case(ExecutionMode::Batch, Some(AggregationOperator::Count), true)]
+    #[case(ExecutionMode::Batch, Some(AggregationOperator::Sum), true)]
+    #[case(ExecutionMode::Batch, Some(AggregationOperator::Avg), true)]
+    #[case(ExecutionMode::Inc, None, true)]
+    #[case(ExecutionMode::Inc, Some(AggregationOperator::Min), false)]
+    #[case(ExecutionMode::Inc, Some(AggregationOperator::Sum), false)]
+    fn only_duplicate_sensitive_batch_aggregates_dedup_their_union(
         #[case] mode: ExecutionMode,
-        #[case] aggregated: bool,
+        #[case] aggregation: Option<AggregationOperator>,
         #[case] expected: bool,
     ) {
-        assert_eq!(union_needs_dedup(mode, aggregated), expected);
+        assert_eq!(union_needs_dedup(mode, aggregation), expected);
     }
 
     /// `count` and `sum` share the split: `count` ignores the value, but the

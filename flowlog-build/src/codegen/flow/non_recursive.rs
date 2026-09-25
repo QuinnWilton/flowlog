@@ -95,7 +95,7 @@ impl CodeGen {
             };
 
             let aggregation = stratum.idb_to_aggregation_map().get(idb_fp);
-            let dedup = union_needs_dedup(self.config.mode(), aggregation.is_some());
+            let dedup = union_needs_dedup(self.config.mode(), aggregation.map(|(op, ..)| *op));
 
             with_plan_graph(plan_graph, |plan_graph| {
                 let name = self.display_name(*idb_fp);

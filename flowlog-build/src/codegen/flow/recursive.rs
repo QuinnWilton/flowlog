@@ -214,7 +214,7 @@ impl CodeGen {
             // derivations cannot keep feedback alive. An aggregated relation
             // feeds back its reduce output instead of this union.
             let aggregation = idb_to_aggregation_map.get(idb_fp);
-            let dedup = union_needs_dedup(self.config.mode(), aggregation.is_some());
+            let dedup = union_needs_dedup(self.config.mode(), aggregation.map(|(op, ..)| *op));
             let union = if dedup {
                 quote! { ::flowlog_runtime::operators::flowlog_dedup(#union_expr) }
             } else {

@@ -35,10 +35,11 @@ use timely::progress::Timestamp;
 /// Groups rows by key and reduces each group under `aggregation`.
 ///
 /// `split` produces the group key and aggregated value; `merge` rebuilds
-/// an output row. Each distinct pair contributes once, whichever weight
-/// strategy runs. An `i32` input may count a pair once per derivation: the
-/// pair contributes while its count is positive. `Present` carries no
-/// count, so its pairs must already be deduplicated.
+/// an output row. Answers are defined over distinct pairs. An `i32` input
+/// may count a pair once per derivation: the pair contributes once while
+/// its count is positive. `Present` carries no count, so a repeated pair
+/// is folded again; that cannot change a min or max, but count, sum, and
+/// average need deduplicated input.
 ///
 /// `empty_key` names a group that exists even without input. That group
 /// receives the aggregation's empty result when defined; no other absent
@@ -315,6 +316,56 @@ mod tests {
             });
             for (epoch, value) in [None, Some(7), None, Some(8)].into_iter().enumerate() {
                 if let Some(value) = value {
+                    input.update(value, Present);
+                }
+                let next = epoch as u32 + 1;
+                input.advance_to(next);
+                input.flush();
+                worker.step_while(|| probe.less_than(&next));
+            }
+            input.close();
+            while worker.step() {}
+            seen.take()
+        });
+        assert_eq!(actual, expected);
+    }
+
+    /// `Present` carries no count, so a repeated value is folded again.
+    /// That cannot move an extreme: values repeat within an epoch and in
+    /// later epochs, yet each answer is emitted once.
+    #[rstest]
+    #[case(Min, vec![(3, 0, Present), (2, 2, Present)])]
+    #[case(Max, vec![(5, 0, Present), (6, 2, Present)])]
+    fn present_extremes_ignore_repeated_values<A>(
+        #[case] aggregation: A,
+        #[case] expected: Vec<(i64, u32, Present)>,
+    ) where
+        A: Aggregation<i64, i64> + Send + Sync,
+        A::Semiring: ExchangeData,
+    {
+        let actual = timely::execute_directly(move |worker| {
+            let seen = Rc::new(RefCell::new(Vec::new()));
+            let probe = Handle::new();
+            let mut input = worker.dataflow::<u32, _, _>(|scope| {
+                let (input, rows) = scope.new_collection::<i64, Present>();
+                let seen = Rc::clone(&seen);
+                flowlog_reduce(
+                    rows,
+                    "Reduce",
+                    aggregation,
+                    None,
+                    |value| ((), value),
+                    |(), value| value,
+                )
+                .inspect(move |update| seen.borrow_mut().push(*update))
+                .probe_with(&probe);
+                input
+            });
+            for (epoch, values) in [vec![5, 5, 3, 3], vec![5, 3, 4], vec![2, 2, 6, 6]]
+                .into_iter()
+                .enumerate()
+            {
+                for value in values {
                     input.update(value, Present);
                 }
                 let next = epoch as u32 + 1;

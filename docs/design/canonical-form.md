@@ -46,9 +46,10 @@ This is a set of key/value pairs: the rows of a collection.
   IDB once its rules' heads are unioned, so a multiplicity inside a rule
   is a count of derivations that the next dedup flattens. An incremental
   aggregate reads its union without that dedup and flattens the count
-  itself: it uses a row once while the row's count is positive. Row-set
-  equality is therefore the right notion for substituting one collection
-  for another.
+  itself: it uses a row once while the row's count is positive. A batch
+  min or max also reads its union directly, since a repeated row cannot
+  move an extreme. Row-set equality is therefore the right notion for
+  substituting one collection for another.
 - **(P3) Expressions are pure.** A function call denotes a deterministic
   function of its arguments.
 - **(P4) One database.** Both collections are evaluated against the same
