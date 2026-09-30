@@ -204,7 +204,7 @@ impl Program {
     }
 
     #[inline]
-    fn is_edb_relation(&self, rel: &Relation) -> bool {
+    pub(crate) fn is_edb_relation(&self, rel: &Relation) -> bool {
         rel.has_input() || self.has_inline_facts(rel.name())
     }
 }
@@ -212,6 +212,7 @@ impl Program {
 #[cfg(test)]
 mod tests {
     use crate::InputSource;
+    use crate::Mutability;
     use crate::Relation;
     use crate::test_util::assembled;
 
@@ -298,5 +299,29 @@ mod tests {
         );
         assert_eq!(names(file_backed), vec!["both", "file_only"]);
         assert_eq!(names(inline_facts), vec!["both", "fact_only"]);
+    }
+
+    /// A mutability on a `.decl` inside a `.comp` reaches the inlined relation.
+    #[test]
+    fn component_decl_carries_its_mutability() {
+        let program = assembled(
+            "
+            .comp C {
+                .decl E(x: number) mutable
+                .input E
+                .decl R(x: number)
+                .output R
+                R(x) :- E(x).
+            }
+            .init c = C
+            ",
+        )
+        .expect("assembles");
+        let edb = program
+            .relations()
+            .iter()
+            .find(|rel| rel.raw_name() == "c.E")
+            .expect("inlined");
+        assert_eq!(edb.mutability(), Some(Mutability::Mutable));
     }
 }
