@@ -35,7 +35,7 @@ pub use ident::input_field_ident;
 pub use ident::input_handle_ident;
 pub use ident::output_emitter_ident;
 pub use ident::relation_marker_ident;
-pub use io::relation::gen_relations;
+pub use io::gen_relations;
 pub use skeleton::Skeleton;
 pub(crate) use ty::data::internal_tuple_tokens;
 pub(crate) use ty::data::row_is_copy;

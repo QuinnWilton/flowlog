@@ -229,6 +229,8 @@ mod tests {
         ));
         let outputs = codegen.gen_outputs(&mut None).expect("outputs");
         assert_eq!(outputs.output_buffers.len(), 2);
+        // `Both` gets a size and a row inspector, `Count` a size inspector.
+        assert_eq!(outputs.inspectors.len(), 3);
         assert_eq!(
             strings(&outputs.local_producers),
             [quote! { let local_both = buf_both.worker(); }.to_string()]
@@ -279,17 +281,13 @@ mod tests {
     }
 
     /// A presence cannot sum into a count, so a static relation lifts to a
-    /// signed count before counting.
-    #[test]
-    fn a_static_size_inspector_lifts_presence_to_a_count() {
-        let codegen = codegen(".decl R(a: int32)\n.input R\n");
-        let tokens = codegen.gen_size_inspector(
-            &format_ident!("r"),
-            &format_ident!("buf_r"),
-            "R",
-            Mutability::Static,
-        );
-        let expected = quote! {{
+    /// signed count before counting; a mutable one's counts sum as they are.
+    /// Only an incremental engine probes.
+    // Cases: input mutability, size inspector.
+    #[rstest]
+    #[case::static_batch(
+        "",
+        quote! {{
             let buf_r = buf_r.clone();
             ::flowlog_runtime::operators::flowlog_lift(
                 ::flowlog_runtime::operators::flowlog_dedup(r.clone()),
@@ -300,7 +298,33 @@ mod tests {
             .inspect(move |(_data, time, size)| {
                 buf_r.record_size(time, *size);
             });
-        }};
+        }}
+    )]
+    #[case::mutable(
+        " mutable",
+        quote! {{
+            let buf_r = buf_r.clone();
+            ::flowlog_runtime::operators::flowlog_dedup(r.clone())
+                .map(|_| ())
+                .consolidate()
+                .inspect(move |(_data, time, size)| {
+                    buf_r.record_size(time, *size);
+                })
+                .probe_with(&mut probe);
+        }}
+    )]
+    fn a_size_inspector_counts_at_the_relations_weight(
+        #[case] mutability: &str,
+        #[case] expected: TokenStream,
+    ) {
+        let codegen = codegen(&format!(".decl R(a: int32){mutability}\n.input R\n"));
+        let input_mutability = codegen.program.edbs()[0].input_mutability();
+        let tokens = codegen.gen_size_inspector(
+            &format_ident!("r"),
+            &format_ident!("buf_r"),
+            "R",
+            input_mutability,
+        );
         assert_eq!(tokens.to_string(), expected.to_string());
     }
 }

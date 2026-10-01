@@ -1,11 +1,10 @@
-//! Relation declarations: [`gen_relations`] returns each relation's runtime
-//! `Relation` implementation and the worker-local `Inputs` container that
-//! owns the inputs' typed loaders and forwards lifecycle calls to them.
-//! Source loading and command dispatch live elsewhere.
+//! Relation declarations: each relation's runtime `Relation`
+//! implementation, the identity its loader and its writer both read.
+//! Loading, the input collections, and the output emitters live in the
+//! sibling modules.
 
 use flowlog_parser::DataType;
 use flowlog_parser::InputSource;
-use flowlog_parser::Mutability;
 use flowlog_parser::OrderKey;
 use flowlog_parser::Program;
 use flowlog_parser::Relation;
@@ -15,50 +14,14 @@ use syn::Index;
 
 use crate::CodegenError;
 use crate::const_to_token;
-use crate::input_field_ident;
-use crate::input_handle_ident;
 use crate::internal_tuple_tokens;
 use crate::relation_marker_ident;
 use crate::tuple_tokens;
-use crate::ty::diff::weight_tokens;
-
-/// Returns a `Relation` declaration for every input and output, then the
-/// `Inputs` container of the inputs' loaders.
-///
-/// Each loader carries its relation's declared weight, and every lifecycle
-/// method past the inline facts drives the loaders of one mutability. A
-/// static input is loaded once: the driver ends it with `close_static`
-/// before the first advance. A mutable one advances each epoch and closes
-/// with `close_mutable` when the driver quits.
-///
-/// The generated code expects its parent module to supply `Ts` and the
-/// tuple representation imports; interned facts use the runtime's string
-/// pool.
-pub fn gen_relations(program: &Program, string_intern: bool) -> Result<TokenStream, CodegenError> {
-    let edbs = program.edbs();
-    let outputs = program.idbs();
-    let declarations = edbs
-        .iter()
-        .copied()
-        .chain(outputs.into_iter().filter(|output| {
-            !edbs
-                .iter()
-                .any(|input| input.fingerprint() == output.fingerprint())
-        }))
-        .map(|relation| gen_declaration(program, relation, string_intern))
-        .collect::<Result<Vec<_>, _>>()?;
-    let inputs = gen_inputs_container(&edbs, string_intern);
-    Ok(quote! {
-        use super::*;
-        #(#declarations)*
-        #inputs
-    })
-}
 
 /// Returns a relation's marker type `Rel<name>` and its `Relation`
 /// implementation: name, arity, tuple type, the text settings its input and
 /// output declare, its inline facts, and its output ordering.
-fn gen_declaration(
+pub(super) fn gen_declaration(
     program: &Program,
     relation: &Relation,
     string_intern: bool,
@@ -133,73 +96,6 @@ fn gen_declaration(
             #ordering
         }
     })
-}
-
-/// Returns the `Inputs` container: one loader field per input, the
-/// constructor that wraps each input session in its loader, and the
-/// lifecycle methods, each forwarding to the loaders it applies to.
-fn gen_inputs_container(edbs: &[&Relation], string_intern: bool) -> TokenStream {
-    let mut fields = Vec::new();
-    let mut parameters = Vec::new();
-    let mut initializers = Vec::new();
-    let mut inline = Vec::new();
-    let mut advance = Vec::new();
-    let mut flush = Vec::new();
-    let mut close_static = Vec::new();
-    let mut close_mutable = Vec::new();
-    for relation in edbs {
-        let marker = relation_marker_ident(relation.name());
-        let field = input_field_ident(relation.name());
-        let handle = input_handle_ident(relation.name());
-        let tuple = internal_tuple_tokens(&relation.data_type(), string_intern);
-        let mutability = relation.input_mutability();
-        let weight = weight_tokens(mutability);
-        fields.push(quote! {
-            pub #field: ::flowlog_runtime::io::input::Loader<#marker, Ts, #weight>
-        });
-        parameters.push(quote! {
-            #handle: ::flowlog_runtime::differential_dataflow::input::InputSession<Ts, #tuple, #weight>
-        });
-        initializers.push(quote! {
-            #field: ::flowlog_runtime::io::input::Loader::new(#handle, peers, index, uses_ord)?
-        });
-        inline.push(quote! { self.#field.inline_facts(::flowlog_runtime::diff::Unit::one()); });
-        match mutability {
-            Mutability::Static => close_static.push(quote! { self.#field.close(); }),
-            Mutability::Mutable => {
-                advance.push(quote! { self.#field.advance_to(t); });
-                flush.push(quote! { self.#field.flush(); });
-                close_mutable.push(quote! { self.#field.close(); });
-            }
-        }
-    }
-
-    // Worker helpers need the whole set of differently typed loaders. A
-    // container keeps their parameter lists independent of relation count,
-    // at the cost of thin forwarding methods in generated code.
-    quote! {
-        pub(crate) struct Inputs {
-            #(#fields,)*
-        }
-
-        #[allow(dead_code, unused_variables)]
-        impl Inputs {
-            pub fn new(
-                #(#parameters,)*
-                peers: usize,
-                index: usize,
-                uses_ord: bool,
-            ) -> Result<Self, ::flowlog_runtime::RuntimeError> {
-                Ok(Self { #(#initializers,)* })
-            }
-
-            pub fn apply_inline_all(&mut self) { #(#inline)* }
-            pub fn advance_mutable_to(&mut self, t: Ts) { #(#advance)* }
-            pub fn flush_mutable(&mut self) { #(#flush)* }
-            pub fn close_static(&mut self) { #(#close_static)* }
-            pub fn close_mutable(&mut self) { #(#close_mutable)* }
-        }
-    }
 }
 
 /// Returns the `compare` function that orders tuples by each key of `spec`
@@ -290,33 +186,34 @@ mod tests {
             &mut Config::default(),
         )
         .expect("parse");
-        let tokens = gen_relations(&program, string_intern).expect("generate relations");
+        let declarations = program
+            .relations()
+            .iter()
+            .map(|relation| gen_declaration(&program, relation, string_intern))
+            .collect::<Result<Vec<_>, _>>()
+            .expect("generate declarations");
+        let tokens = quote! { #(#declarations)* };
         syn::parse2::<syn::File>(tokens.clone()).expect("valid Rust syntax");
         tokens.to_string()
     }
 
-    /// A loader and its session carry the relation's declared weight.
-    #[rstest]
-    #[case::undeclared("", quote! { ::flowlog_runtime::diff::Static })]
-    #[case::static_input(" static", quote! { ::flowlog_runtime::diff::Static })]
-    #[case::mutable_input(" mutable", quote! { ::flowlog_runtime::diff::Mutable })]
-    fn input_fields_bind_runtime_loaders_to_their_sessions(
-        #[case] mutability: &str,
-        #[case] weight: TokenStream,
-    ) {
-        let generated = generate(
-            &format!(".decl Edge(id: int32){mutability}\n.input Edge\n.output Edge\n"),
-            false,
-        );
-        for expected in [
-            quote! { pub in_edge: ::flowlog_runtime::io::input::Loader<Reledge, Ts, #weight> },
-            quote! { hedge: ::flowlog_runtime::differential_dataflow::input::InputSession<Ts, (i32,), #weight> },
-            quote! { in_edge: ::flowlog_runtime::io::input::Loader::new(hedge, peers, index, uses_ord)? },
-        ] {
-            assert!(generated.contains(&expected.to_string()), "{generated}");
-        }
-        assert!(!generated.contains("fn facts"));
-        assert!(!generated.contains("INPUT_HAS_HEADER"), "{generated}");
+    /// `string` lowers to the interner's key when interning is on, and a
+    /// file input carries the parser's default delimiter, a tab.
+    #[test]
+    fn a_declaration_names_the_relation_and_its_tuple() {
+        let generated = generate(".decl R(id: int32, name: string)\n.input R\n", true);
+        let expected = quote! {
+            #[allow(non_camel_case_types)]
+            pub(crate) struct Relr;
+
+            impl ::flowlog_runtime::io::Relation for Relr {
+                const NAME: &'static str = "R";
+                const ARITY: usize = 2usize;
+                type Tuple = (i32, ::flowlog_runtime::lasso::Spur);
+                const INPUT_DELIMITER: u8 = 9u8;
+            }
+        };
+        assert_eq!(generated, expected.to_string());
     }
 
     #[test]
@@ -347,68 +244,12 @@ mod tests {
         assert!(!generated.contains("OUTPUT_DELIMITER"), "{generated}");
     }
 
-    /// Inline facts reach every input; the epoch methods and `close_mutable`
-    /// reach only the mutable ones, and `close_static` only the static ones.
     #[test]
-    fn lifecycle_methods_forward_to_the_inputs_of_their_mutability() {
-        let generated = generate(
-            r#"
-            .decl Edge(id: int32) mutable
-            .input Edge
-            .decl Node(name: string)
-            .input Node
-            .decl Out(id: int32)
-            Out(x) :- Edge(x), Node("a").
-            .output Out
-            "#,
-            false,
-        );
-        for expected in [
-            quote! {
-                pub fn apply_inline_all(&mut self) {
-                    self.in_edge.inline_facts(::flowlog_runtime::diff::Unit::one());
-                    self.in_node.inline_facts(::flowlog_runtime::diff::Unit::one());
-                }
-            },
-            quote! {
-                pub fn advance_mutable_to(&mut self, t: Ts) {
-                    self.in_edge.advance_to(t);
-                }
-            },
-            quote! {
-                pub fn flush_mutable(&mut self) {
-                    self.in_edge.flush();
-                }
-            },
-            quote! {
-                pub fn close_static(&mut self) {
-                    self.in_node.close();
-                }
-            },
-            quote! {
-                pub fn close_mutable(&mut self) {
-                    self.in_edge.close();
-                }
-            },
-        ] {
-            assert!(generated.contains(&expected.to_string()), "{generated}");
-        }
-    }
-
-    #[test]
-    fn no_inputs_generate_an_empty_container_with_no_op_lifecycle_methods() {
-        let generated = generate("", false);
-        for expected in [
-            quote! { pub(crate) struct Inputs {} },
-            quote! { Ok(Self {}) },
-            quote! { pub fn apply_inline_all(&mut self) {} },
-            quote! { pub fn advance_mutable_to(&mut self, t: Ts) {} },
-            quote! { pub fn flush_mutable(&mut self) {} },
-            quote! { pub fn close_static(&mut self) {} },
-            quote! { pub fn close_mutable(&mut self) {} },
-        ] {
-            assert!(generated.contains(&expected.to_string()), "{generated}");
-        }
+    fn a_plain_relation_declares_no_facts_and_no_ordering() {
+        let generated = generate(".decl Edge(id: int32)\n.input Edge\n.output Edge\n", false);
+        assert!(!generated.contains("fn facts"), "{generated}");
+        assert!(!generated.contains("ORDERED"), "{generated}");
+        assert!(!generated.contains("fn compare"), "{generated}");
     }
 
     #[test]
@@ -434,18 +275,26 @@ mod tests {
     }
 
     /// Keys compare in order, a `DESC` key with its sides swapped, and an
-    /// interned string by its text.
-    #[test]
-    fn an_ordered_output_compares_its_keys_in_turn() {
+    /// interned string by its text; the limit is `None` unless declared.
+    // Cases: limit clause, LIMIT.
+    #[rstest]
+    #[case::limited(", limit=\"3\"", quote! { Some(3usize) })]
+    #[case::unlimited("", quote! { None })]
+    fn an_ordered_output_compares_its_keys_in_turn(
+        #[case] limit: &str,
+        #[case] expected_limit: TokenStream,
+    ) {
         let generated = generate(
-            ".decl R(id: int32, name: string)\n\
-             R(1, \"a\").\n\
-             .output R(order_by=\"name DESC, id\", limit=\"3\")\n",
+            &format!(
+                ".decl R(id: int32, name: string)\n\
+                 R(1, \"a\").\n\
+                 .output R(order_by=\"name DESC, id\"{limit})\n"
+            ),
             true,
         );
         let expected = quote! {
             const ORDERED: bool = true;
-            const LIMIT: Option<usize> = Some(3usize);
+            const LIMIT: Option<usize> = #expected_limit;
             fn compare(a: &Self::Tuple, b: &Self::Tuple) -> std::cmp::Ordering {
                 let cmp = ::flowlog_runtime::intern::resolve_out(b.1)
                     .cmp(&::flowlog_runtime::intern::resolve_out(a.1));
