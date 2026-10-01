@@ -2,7 +2,7 @@
 
 Before this work, a program was compiled for one mode. `--mode batch` gave every
 collection `Diff = Present` at `Ts = ()`. `--mode inc` gave every collection
-`Diff = i32` at `Ts = u32` (`flowlog-build/src/codegen/ty/`). This note
+`Diff = i32` at `Ts = u32` (`flowlog-codegen/src/ty/`). This note
 proposes a third option: each input relation declares how it may change, the
 compiler infers a mutability for every derived collection, and each collection
 uses the cheapest weight that is still correct for its mutability. Batch mode is the
@@ -675,7 +675,7 @@ Decided so far:
   [the assignment](#the-assignment) done by the compiler: a join's weight is
   the `Multiply` output of its sides, and an antijoin's is the product of
   its filter's and its source's. Codegen records each collection's
-  mutability (`CodeGen::global_fp_to_mutability`) for the few places that must name it:
+  mutability (`Codegen::global_fp_to_mutability`) for the few places that must name it:
   - a union at a relation's weight lifts its static parts: a rule over
     static relations only, an input binding, or a static partial result from
     an earlier stratum;
