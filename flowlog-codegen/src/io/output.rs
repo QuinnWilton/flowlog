@@ -1,4 +1,4 @@
-//! Outputs: every IDB's emitter, and the inspectors that feed it: row
+//! Output: every IDB's emitter, and the inspectors that feed it: row
 //! changes for `.output`, the row count for `.printsize`. Workers buffer
 //! updates and publish them at the engine's completion boundary. Every
 //! emitted change is an `i32`, whatever the relation's weight: a static
@@ -9,38 +9,44 @@ use flowlog_profiler::PlanGraph;
 use flowlog_profiler::with_plan_graph;
 use proc_macro2::Ident;
 use proc_macro2::TokenStream;
-use quote::format_ident;
 use quote::quote;
 
 use crate::Codegen;
 use crate::CodegenError;
+use crate::local_emitter_ident;
 use crate::output_emitter_ident;
 use crate::relation_marker_ident;
 
 /// The outputs' fragments, one entry per output in each, grouped by where
-/// the [`Skeleton`](crate::Skeleton) field of the same name places
-/// them.
+/// the [`Skeleton`](crate::Skeleton) places them.
 #[derive(Default)]
-pub(crate) struct Outputs {
-    pub output_buffers: Vec<TokenStream>,
-    pub output_buffer_clones: Vec<TokenStream>,
-    /// Worker-local producers, part of the skeleton's `worker_init`.
-    pub local_producers: Vec<TokenStream>,
-    /// Inspectors, part of the skeleton's `dataflow`.
+pub(crate) struct Output {
+    /// The skeleton's `emitters`: each output's shared emitter.
+    pub emitters: Vec<TokenStream>,
+    /// The skeleton's `emitter_captures`: the worker closure's handle to
+    /// each emitter.
+    pub emitter_captures: Vec<TokenStream>,
+    /// Part of the skeleton's `worker_init`: each `.output` relation's
+    /// worker-local emitter.
+    pub local_emitters: Vec<TokenStream>,
+    /// Part of the skeleton's `dataflow`: the inspectors recording into the
+    /// emitters.
     pub inspectors: Vec<TokenStream>,
-    pub flush: Vec<TokenStream>,
+    /// The skeleton's `publish`: each worker-local emitter's publish into
+    /// its emitter.
+    pub publishes: Vec<TokenStream>,
 }
 
 impl Codegen {
     /// Returns every IDB's output fragments: its emitter, a size inspector
     /// for `.printsize`, and for `.output` a row inspector, the worker-local
-    /// producer it records into, and that producer's flush. Also marks
+    /// emitter it records into, and that emitter's publish. Also marks
     /// ordered floats when an IDB's columns hold a float.
-    pub(crate) fn gen_outputs(
+    pub(crate) fn gen_output(
         &mut self,
         plan_graph: &mut Option<PlanGraph>,
-    ) -> Result<Outputs, CodegenError> {
-        let mut outputs = Outputs::default();
+    ) -> Result<Output, CodegenError> {
+        let mut output = Output::default();
         with_plan_graph(plan_graph, |p| p.update_inspect_block());
 
         for idb in self.program.idbs() {
@@ -51,18 +57,18 @@ impl Codegen {
             // Profiler edges use generated bindings; labels keep the
             // relation's spelling in the source program.
             let label = idb.raw_name().to_string();
-            outputs.output_buffers.push(quote! {
+            output.emitters.push(quote! {
                 let #emitter = ::flowlog_runtime::io::output::Emitter::<#marker, Ts>::new();
             });
-            outputs
-                .output_buffer_clones
+            output
+                .emitter_captures
                 .push(quote! { let #emitter = #emitter.clone(); });
 
             if idb.printsize() {
                 with_plan_graph(plan_graph, |p| {
                     p.inspect_size_operator(collection.to_string(), label.clone(), mutability);
                 });
-                outputs.inspectors.push(self.gen_size_inspector(
+                output.inspectors.push(self.gen_size_inspector(
                     &collection,
                     &emitter,
                     idb.raw_name(),
@@ -86,18 +92,18 @@ impl Codegen {
                         );
                     }
                 });
-                let worker = format_ident!("local_{}", idb.name());
-                outputs
-                    .local_producers
-                    .push(quote! { let #worker = #emitter.worker(); });
-                outputs
+                let local = local_emitter_ident(idb.name());
+                output
+                    .local_emitters
+                    .push(quote! { let #local = #emitter.worker(); });
+                output
                     .inspectors
-                    .push(self.gen_row_inspector(&collection, &worker, mutability));
-                outputs.flush.push(quote! { #worker.publish(); });
+                    .push(self.gen_row_inspector(&collection, &local, mutability));
+                output.publishes.push(quote! { #local.publish(); });
             }
         }
 
-        Ok(outputs)
+        Ok(output)
     }
 
     /// Returns the inspector that records, each epoch, the change in
@@ -135,11 +141,11 @@ impl Codegen {
     }
 
     /// Returns the inspector that records each of `collection`'s row changes,
-    /// at its time, into the worker-local producer `worker`.
+    /// at its time, into the worker-local emitter `local`.
     fn gen_row_inspector(
         &self,
         collection: &Ident,
-        worker: &Ident,
+        local: &Ident,
         mutability: Mutability,
     ) -> TokenStream {
         // A static relation is deduped once, at its minimum time, so each
@@ -147,26 +153,26 @@ impl Codegen {
         let inspected = match mutability {
             Mutability::Static => quote! {
                 #collection.inspect(move |(data, time, _)| {
-                    #worker.record(data, time, 1_i32);
+                    #local.record(data, time, 1_i32);
                 })
             },
             Mutability::Mutable => quote! {
                 #collection
                     .consolidate()
                     .inspect(move |(data, time, diff)| {
-                        #worker.record(data, time, *diff);
+                        #local.record(data, time, *diff);
                     })
             },
         };
         let probe = self.gen_probe();
         quote! {{
-            let #worker = #worker.clone();
+            let #local = #local.clone();
             #inspected #probe;
         }}
     }
 
     /// Emits the probe an incremental engine attaches to every output, so
-    /// it can tell when an epoch's outputs are complete; nothing in a batch
+    /// it can tell when an epoch's output are complete; nothing in a batch
     /// engine, which runs to completion instead.
     fn gen_probe(&self) -> TokenStream {
         if self.program.is_incremental() {
@@ -179,63 +185,35 @@ impl Codegen {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
-    use flowlog_common::Config;
-    use flowlog_common::SourceMap;
+    use quote::format_ident;
     use rstest::rstest;
 
     use super::*;
+    use crate::test_harness::codegen;
+    use crate::test_harness::strings;
 
-    /// A code generator over `source`, with every relation's mutability taken
-    /// from its declaration, as the strata would record it.
-    fn codegen(source: &str) -> Codegen {
-        let mut file = tempfile::NamedTempFile::new().expect("tempfile");
-        writeln!(file, "{source}").expect("write");
-        let mut config = Config::default();
-        let program = flowlog_parser::parse(
-            &file.path().to_string_lossy(),
-            &[],
-            &mut SourceMap::default(),
-            &mut config,
-        )
-        .expect("program parses");
-        let mut codegen = Codegen::new(config, program);
-        codegen.seed_global_idents();
-        codegen.global_fp_to_mutability = codegen
-            .program
-            .edbs()
-            .into_iter()
-            .chain(codegen.program.idbs())
-            .map(|rel| (rel.fingerprint(), rel.input_mutability()))
-            .collect();
-        codegen
-    }
-
-    fn strings(tokens: &[TokenStream]) -> Vec<String> {
-        tokens.iter().map(ToString::to_string).collect()
-    }
-
-    /// Every IDB gets an emitter, but only an `.output` one gets a row buffer
-    /// and a flush, in either engine.
+    /// Every IDB gets an emitter, but only an `.output` one gets a
+    /// worker-local emitter and a publish, in either engine.
     #[rstest]
     #[case::batch("")]
     #[case::incremental(" mutable")]
-    fn only_an_output_relation_buffers_rows(#[case] mutability: &str) {
+    fn only_an_output_relation_gets_a_local_emitter(#[case] mutability: &str) {
         let mut codegen = codegen(&format!(
             ".decl Data(a: int32){mutability}\n.input Data\n\
              .decl Both(a: int32)\nBoth(a) :- Data(a).\n.output Both\n.printsize Both\n\
              .decl Count(a: int32)\nCount(a) :- Data(a).\n.printsize Count\n"
         ));
-        let outputs = codegen.gen_outputs(&mut None).expect("outputs");
-        assert_eq!(outputs.output_buffers.len(), 2);
+        let output = codegen.gen_output(&mut None).expect("output");
+        assert_eq!(output.emitters.len(), 2);
+        // `Both` gets a size and a row inspector, `Count` a size inspector.
+        assert_eq!(output.inspectors.len(), 3);
         assert_eq!(
-            strings(&outputs.local_producers),
-            [quote! { let local_both = buf_both.worker(); }.to_string()]
+            strings(&output.local_emitters),
+            [quote! { let local_emitter_both = emitter_both.worker(); }.to_string()]
         );
         assert_eq!(
-            strings(&outputs.flush),
-            [quote! { local_both.publish(); }.to_string()]
+            strings(&output.publishes),
+            [quote! { local_emitter_both.publish(); }.to_string()]
         );
     }
 
@@ -247,19 +225,19 @@ mod tests {
     #[case::static_batch(
         "",
         quote! {{
-            let local_r = local_r.clone();
+            let local_emitter_r = local_emitter_r.clone();
             r.inspect(move |(data, time, _)| {
-                local_r.record(data, time, 1_i32);
+                local_emitter_r.record(data, time, 1_i32);
             });
         }}
     )]
     #[case::mutable(
         " mutable",
         quote! {{
-            let local_r = local_r.clone();
+            let local_emitter_r = local_emitter_r.clone();
             r.consolidate()
                 .inspect(move |(data, time, diff)| {
-                    local_r.record(data, time, *diff);
+                    local_emitter_r.record(data, time, *diff);
                 })
                 .probe_with(&mut probe);
         }}
@@ -272,25 +250,21 @@ mod tests {
         let input_mutability = codegen.program.edbs()[0].input_mutability();
         let tokens = codegen.gen_row_inspector(
             &format_ident!("r"),
-            &format_ident!("local_r"),
+            &format_ident!("local_emitter_r"),
             input_mutability,
         );
         assert_eq!(tokens.to_string(), expected.to_string());
     }
 
     /// A presence cannot sum into a count, so a static relation lifts to a
-    /// signed count before counting.
-    #[test]
-    fn a_static_size_inspector_lifts_presence_to_a_count() {
-        let codegen = codegen(".decl R(a: int32)\n.input R\n");
-        let tokens = codegen.gen_size_inspector(
-            &format_ident!("r"),
-            &format_ident!("buf_r"),
-            "R",
-            Mutability::Static,
-        );
-        let expected = quote! {{
-            let buf_r = buf_r.clone();
+    /// signed count before counting; a mutable one's counts sum as they are.
+    /// Only an incremental engine probes.
+    // Cases: input mutability, size inspector.
+    #[rstest]
+    #[case::static_batch(
+        "",
+        quote! {{
+            let emitter_r = emitter_r.clone();
             ::flowlog_runtime::operators::flowlog_lift(
                 ::flowlog_runtime::operators::flowlog_dedup(r.clone()),
                 "R: inspect size"
@@ -298,9 +272,35 @@ mod tests {
             .map(|_| ())
             .consolidate()
             .inspect(move |(_data, time, size)| {
-                buf_r.record_size(time, *size);
+                emitter_r.record_size(time, *size);
             });
-        }};
+        }}
+    )]
+    #[case::mutable(
+        " mutable",
+        quote! {{
+            let emitter_r = emitter_r.clone();
+            ::flowlog_runtime::operators::flowlog_dedup(r.clone())
+                .map(|_| ())
+                .consolidate()
+                .inspect(move |(_data, time, size)| {
+                    emitter_r.record_size(time, *size);
+                })
+                .probe_with(&mut probe);
+        }}
+    )]
+    fn a_size_inspector_counts_at_the_relations_weight(
+        #[case] mutability: &str,
+        #[case] expected: TokenStream,
+    ) {
+        let codegen = codegen(&format!(".decl R(a: int32){mutability}\n.input R\n"));
+        let input_mutability = codegen.program.edbs()[0].input_mutability();
+        let tokens = codegen.gen_size_inspector(
+            &format_ident!("r"),
+            &format_ident!("emitter_r"),
+            "R",
+            input_mutability,
+        );
         assert_eq!(tokens.to_string(), expected.to_string());
     }
 }
