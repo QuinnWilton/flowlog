@@ -580,6 +580,11 @@ pub enum ParseError {
         mutability: Mutability,
     },
 
+    /// The program names no `.output` and no `.printsize`, so nothing it
+    /// derives could be observed.
+    #[error("program has no `.output` or `.printsize` directive")]
+    NoOutput,
+
     /// A grammar contract the Pest grammar should have made unreachable. Not a
     /// user error; reported as an internal compiler bug.
     #[error(transparent)]
@@ -1117,6 +1122,12 @@ impl Diagnostic for ParseError {
                     "remove `{mutability}` from `.decl {name}`, or give it an `.input` or inline facts"
                 )]),
 
+            // Program-wide: no span to point at.
+            ParseError::NoOutput => base.with_notes(vec![
+                "add `.output <relation>` to write a relation's rows, or \
+                 `.printsize <relation>` to report its size"
+                    .into(),
+            ]),
         }
     }
 

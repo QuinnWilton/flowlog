@@ -158,7 +158,7 @@ fn gen_run_body(
 
         #emitters
 
-        timely::execute(timely::Config::process(workers), {
+        ::flowlog_runtime::timely::execute(::flowlog_runtime::timely::Config::process(workers), {
             #emitter_captures
 
             move |worker| {

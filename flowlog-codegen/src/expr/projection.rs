@@ -12,6 +12,7 @@ use proc_macro2::TokenStream;
 use crate::Codegen;
 use crate::CodegenError;
 use crate::tuple_tokens;
+use crate::ty::data::KvTypes;
 
 impl Codegen {
     /// Returns the tuple a row closure emits, reading each variable from
@@ -21,10 +22,11 @@ impl Codegen {
         args: &[ArithmeticArgument],
         fields: &[Ident],
         string_intern: bool,
+        input_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
         let parts: Vec<TokenStream> = args
             .iter()
-            .map(|arg| self.row_arithmetic(arg, fields, string_intern))
+            .map(|arg| self.row_arithmetic(arg, fields, string_intern, input_type))
             .collect::<Result<_, _>>()?;
         Ok(tuple_tokens(parts))
     }
@@ -35,10 +37,11 @@ impl Codegen {
         &mut self,
         args: &[ArithmeticArgument],
         string_intern: bool,
+        input_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
         let parts: Vec<TokenStream> = args
             .iter()
-            .map(|arg| self.kv_arithmetic(arg, string_intern))
+            .map(|arg| self.kv_arithmetic(arg, string_intern, input_type))
             .collect::<Result<_, _>>()?;
         Ok(tuple_tokens(parts))
     }
@@ -49,10 +52,12 @@ impl Codegen {
         &mut self,
         args: &[ArithmeticArgument],
         string_intern: bool,
+        left_type: &KvTypes,
+        right_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
         let parts: Vec<TokenStream> = args
             .iter()
-            .map(|arg| self.join_arithmetic(arg, string_intern))
+            .map(|arg| self.join_arithmetic(arg, string_intern, left_type, right_type))
             .collect::<Result<_, _>>()?;
         Ok(tuple_tokens(parts))
     }

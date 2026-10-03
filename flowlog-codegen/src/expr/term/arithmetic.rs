@@ -18,6 +18,9 @@ use crate::Codegen;
 use crate::CodegenError;
 use crate::expr::term::constant::const_to_token;
 use crate::tuple_tokens;
+use crate::ty::data::KvTypes;
+use crate::ty::data::column_is_copy;
+use crate::ty::data::slot_type;
 
 /// Returns `true` for the operators [`arithmetic_step`] emits as a call
 /// rather than an infix expression.
@@ -35,6 +38,36 @@ fn is_call_form(op: &ArithmeticOperator) -> bool {
         | ArithmeticOperator::BitAnd
         | ArithmeticOperator::BitOr
         | ArithmeticOperator::BitXor => false,
+    }
+}
+
+/// Returns `binding`, which holds slot `idx` of `types`' keys (`is_key`) or
+/// values, as an owned value: itself for a `Copy` column, its clone
+/// otherwise.
+fn read_slot(
+    binding: TokenStream,
+    types: &KvTypes,
+    is_key: bool,
+    idx: usize,
+    string_intern: bool,
+) -> Result<TokenStream, CodegenError> {
+    let column = slot_type(types, is_key, idx)?;
+    Ok(if column_is_copy(column, string_intern) {
+        binding
+    } else {
+        quote! { #binding.clone() }
+    })
+}
+
+/// Returns field `index` of `tuple`, lowered to `rec`.
+fn tuple_field(tuple: &ArithmeticArgument, rec: TokenStream, index: usize) -> TokenStream {
+    let idx = Index::from(index);
+    // Field access binds tighter than any operator, so only a multi-step
+    // expression needs grouping.
+    if tuple.rest().is_empty() {
+        quote! { #rec.#idx }
+    } else {
+        quote! { (#rec).#idx }
     }
 }
 
@@ -134,8 +167,7 @@ impl Codegen {
             }
             FactorArgument::TupleProj { tuple, index } => {
                 let rec = self.arithmetic_to_token(tuple, string_intern, resolve_var)?;
-                let idx = Index::from(*index);
-                Ok(quote! { (#rec).#idx })
+                Ok(tuple_field(tuple, rec, *index))
             }
         }
     }
@@ -200,8 +232,7 @@ impl Codegen {
             // resolves to text as the `Var` arm's does.
             FactorArgument::TupleProj { tuple, index } => {
                 let rec = self.arithmetic_to_token(tuple, string_intern, resolve_var)?;
-                let idx = Index::from(*index);
-                let proj = quote! { (#rec).#idx };
+                let proj = tuple_field(tuple, rec, *index);
                 Ok(if string_intern {
                     quote! { ::flowlog_runtime::intern::resolve(#proj) }
                 } else {
@@ -217,12 +248,14 @@ impl Codegen {
     }
 
     /// Returns an argument's arithmetic expression inside a row closure,
-    /// its variables read from the row pattern's `fields`.
+    /// its variables read from the row pattern's `fields`, whose columns
+    /// are `input_type`'s values.
     pub(crate) fn row_arithmetic(
         &mut self,
         expr: &ArithmeticArgument,
         fields: &[Ident],
         string_intern: bool,
+        input_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
         self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
             TransformationArgument::KV((_, idx)) => {
@@ -232,7 +265,7 @@ impl Codegen {
                         fields.len()
                     ))
                 })?;
-                Ok(quote! { #ident.clone() })
+                read_slot(quote! { #ident }, input_type, false, *idx, string_intern)
             }
             TransformationArgument::Jn(_) => Err(CodegenError::internal(format!(
                 "join argument {arg:?} in a row expression"
@@ -252,38 +285,49 @@ impl Codegen {
         &mut self,
         expr: &ArithmeticArgument,
         string_intern: bool,
+        input_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
         self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
             TransformationArgument::KV((is_key, idx))
             | TransformationArgument::Jn((_, is_key, idx)) => {
                 let i = Index::from(*idx);
-                Ok(if *is_key {
-                    quote! { k.#i.clone() }
+                let side = if *is_key {
+                    quote! { k }
                 } else {
-                    quote! { v.#i.clone() }
-                })
+                    quote! { v }
+                };
+                read_slot(
+                    quote! { #side.#i },
+                    input_type,
+                    *is_key,
+                    *idx,
+                    string_intern,
+                )
             }
         })
     }
 
     /// Returns an argument's arithmetic expression inside a join closure,
-    /// its variables read from the `(k, lv, rv)` bindings.
+    /// its variables read from the `(k, lv, rv)` bindings: the key and the
+    /// left values typed by `left_type`, the right values by `right_type`.
     pub(crate) fn join_arithmetic(
         &mut self,
         expr: &ArithmeticArgument,
         string_intern: bool,
+        left_type: &KvTypes,
+        right_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
         self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
             TransformationArgument::Jn((is_left, is_key, idx)) => {
                 let i = Index::from(*idx);
-                let side = match (is_left, is_key) {
-                    (_, true) => quote! { k },
-                    (true, false) => quote! { lv },
-                    (false, false) => quote! { rv },
+                let (side, types) = match (is_left, is_key) {
+                    (_, true) => (quote! { k }, left_type),
+                    (true, false) => (quote! { lv }, left_type),
+                    (false, false) => (quote! { rv }, right_type),
                 };
                 // Join parameters are references; an expression yields an
-                // owned value.
-                Ok(quote! { #side.#i.clone() })
+                // owned value, copied or cloned out.
+                read_slot(quote! { #side.#i }, types, *is_key, *idx, string_intern)
             }
             TransformationArgument::KV(_) => Err(CodegenError::internal(format!(
                 "key-value argument {arg:?} in a join expression"
@@ -315,10 +359,12 @@ mod tests {
         ArithmeticArgument { init, rest }
     }
 
-    /// Lowers `expr` in a key-value closure.
+    /// Lowers `expr` in a key-value closure over one `int32` key and three
+    /// `int32` values.
     fn kv_tokens(expr: &ArithmeticArgument) -> String {
+        let input_type: KvTypes = (vec![DataType::Int32], vec![DataType::Int32; 3]);
         codegen("")
-            .kv_arithmetic(expr, false)
+            .kv_arithmetic(expr, false, &input_type)
             .expect("kv expression")
             .to_string()
     }
@@ -332,18 +378,44 @@ mod tests {
             format_ident!("_x1"),
             format_ident!("x2"),
         ];
+        let input_type: KvTypes = (
+            Vec::new(),
+            vec![DataType::Int32, DataType::Int32, DataType::String],
+        );
         let tokens = codegen("")
-            .row_arithmetic(&expr(value(2), Vec::new()), &fields, false)
+            .row_arithmetic(&expr(value(2), Vec::new()), &fields, false, &input_type)
             .expect("row variable");
         assert_eq!(tokens.to_string(), quote! { x2.clone() }.to_string());
     }
 
+    // Cases: column type, string interning, expression.
+    #[rstest]
+    #[case::integer(DataType::Int32, false, quote! { v.0 })]
+    #[case::string(DataType::String, false, quote! { v.0.clone() })]
+    #[case::interned_string(DataType::String, true, quote! { v.0 })]
+    #[case::tuple_with_string(
+        DataType::FixedTuple(vec![DataType::Int32, DataType::String]),
+        false,
+        quote! { v.0.clone() }
+    )]
+    fn a_variable_is_cloned_only_when_its_column_is_not_copy(
+        #[case] column: DataType,
+        #[case] string_intern: bool,
+        #[case] expected: TokenStream,
+    ) {
+        let input_type: KvTypes = (Vec::new(), vec![column]);
+        let tokens = codegen("")
+            .kv_arithmetic(&expr(value(0), Vec::new()), string_intern, &input_type)
+            .expect("kv variable");
+        assert_eq!(tokens.to_string(), expected.to_string());
+    }
+
     // Cases: variable, expression.
     #[rstest]
-    #[case(KV((true, 0)), quote! { k.0.clone() })]
-    #[case(KV((false, 1)), quote! { v.1.clone() })]
-    #[case::antijoin_key(Jn((true, true, 0)), quote! { k.0.clone() })]
-    #[case::antijoin_value(Jn((false, false, 1)), quote! { v.1.clone() })]
+    #[case(KV((true, 0)), quote! { k.0 })]
+    #[case(KV((false, 1)), quote! { v.1 })]
+    #[case::antijoin_key(Jn((true, true, 0)), quote! { k.0 })]
+    #[case::antijoin_value(Jn((false, false, 1)), quote! { v.1 })]
     fn a_kv_variable_reads_its_side(
         #[case] arg: TransformationArgument,
         #[case] expected: TokenStream,
@@ -354,16 +426,23 @@ mod tests {
 
     // Cases: variable (is_left, is_key, index), expression.
     #[rstest]
-    #[case(Jn((true, true, 0)), quote! { k.0.clone() })]
-    #[case(Jn((false, true, 0)), quote! { k.0.clone() })]
-    #[case(Jn((true, false, 1)), quote! { lv.1.clone() })]
-    #[case(Jn((false, false, 2)), quote! { rv.2.clone() })]
+    #[case(Jn((true, true, 0)), quote! { k.0 })]
+    #[case(Jn((false, true, 0)), quote! { k.0 })]
+    #[case(Jn((true, false, 1)), quote! { lv.1 })]
+    #[case(Jn((false, false, 2)), quote! { rv.2 })]
     fn a_join_variable_reads_its_side(
         #[case] arg: TransformationArgument,
         #[case] expected: TokenStream,
     ) {
+        let left_type: KvTypes = (vec![DataType::Int32], vec![DataType::Int32; 2]);
+        let right_type: KvTypes = (vec![DataType::Int32], vec![DataType::Int32; 3]);
         let tokens = codegen("")
-            .join_arithmetic(&expr(FactorArgument::Var(arg), Vec::new()), false)
+            .join_arithmetic(
+                &expr(FactorArgument::Var(arg), Vec::new()),
+                false,
+                &left_type,
+                &right_type,
+            )
             .expect("join variable");
         assert_eq!(tokens.to_string(), expected.to_string());
     }
@@ -372,29 +451,29 @@ mod tests {
 
     // Cases: operator, `v.0 op v.1`.
     #[rstest]
-    #[case(ArithmeticOperator::Plus, quote! { v.0.clone() + v.1.clone() })]
-    #[case(ArithmeticOperator::Minus, quote! { v.0.clone() - v.1.clone() })]
-    #[case(ArithmeticOperator::Multiply, quote! { v.0.clone() * v.1.clone() })]
-    #[case(ArithmeticOperator::Divide, quote! { v.0.clone() / v.1.clone() })]
-    #[case(ArithmeticOperator::Modulo, quote! { v.0.clone() % v.1.clone() })]
-    #[case(ArithmeticOperator::BitAnd, quote! { v.0.clone() & v.1.clone() })]
-    #[case(ArithmeticOperator::BitOr, quote! { v.0.clone() | v.1.clone() })]
-    #[case(ArithmeticOperator::BitXor, quote! { v.0.clone() ^ v.1.clone() })]
+    #[case(ArithmeticOperator::Plus, quote! { v.0 + v.1 })]
+    #[case(ArithmeticOperator::Minus, quote! { v.0 - v.1 })]
+    #[case(ArithmeticOperator::Multiply, quote! { v.0 * v.1 })]
+    #[case(ArithmeticOperator::Divide, quote! { v.0 / v.1 })]
+    #[case(ArithmeticOperator::Modulo, quote! { v.0 % v.1 })]
+    #[case(ArithmeticOperator::BitAnd, quote! { v.0 & v.1 })]
+    #[case(ArithmeticOperator::BitOr, quote! { v.0 | v.1 })]
+    #[case(ArithmeticOperator::BitXor, quote! { v.0 ^ v.1 })]
     #[case(
         ArithmeticOperator::Power,
-        quote! { ::flowlog_runtime::arith::pow(v.0.clone(), v.1.clone()) }
+        quote! { ::flowlog_runtime::arith::pow(v.0, v.1) }
     )]
     #[case(
         ArithmeticOperator::ShiftLeft,
-        quote! { ::flowlog_runtime::arith::bshl(v.0.clone(), v.1.clone()) }
+        quote! { ::flowlog_runtime::arith::bshl(v.0, v.1) }
     )]
     #[case(
         ArithmeticOperator::ShiftRight,
-        quote! { ::flowlog_runtime::arith::bshr(v.0.clone(), v.1.clone()) }
+        quote! { ::flowlog_runtime::arith::bshr(v.0, v.1) }
     )]
     #[case(
         ArithmeticOperator::ShiftRightUnsigned,
-        quote! { ::flowlog_runtime::arith::bshru(v.0.clone(), v.1.clone()) }
+        quote! { ::flowlog_runtime::arith::bshru(v.0, v.1) }
     )]
     fn each_operator_lowers_to_its_rust_form(
         #[case] op: ArithmeticOperator,
@@ -410,11 +489,11 @@ mod tests {
     #[rstest]
     #[case(
         [ArithmeticOperator::Minus, ArithmeticOperator::Minus],
-        quote! { (v.0.clone() - v.1.clone()) - v.2.clone() }
+        quote! { (v.0 - v.1) - v.2 }
     )]
     #[case(
         [ArithmeticOperator::Power, ArithmeticOperator::Plus],
-        quote! { ::flowlog_runtime::arith::pow(v.0.clone(), v.1.clone()) + v.2.clone() }
+        quote! { ::flowlog_runtime::arith::pow(v.0, v.1) + v.2 }
     )]
     fn the_fold_keeps_its_left_to_right_order(
         #[case] ops: [ArithmeticOperator; 2],
@@ -429,11 +508,11 @@ mod tests {
     #[rstest]
     #[case(
         ArithmeticOperator::Plus,
-        quote! { (v.0.clone() + v.1.clone()) * v.2.clone() }
+        quote! { (v.0 + v.1) * v.2 }
     )]
     #[case(
         ArithmeticOperator::Power,
-        quote! { ::flowlog_runtime::arith::pow(v.0.clone(), v.1.clone()) * v.2.clone() }
+        quote! { ::flowlog_runtime::arith::pow(v.0, v.1) * v.2 }
     )]
     fn a_group_is_parenthesized_unless_it_ends_in_a_call(
         #[case] op: ArithmeticOperator,
@@ -450,10 +529,17 @@ mod tests {
             tuple: Box::new(expr(value(0), Vec::new())),
             index: 1,
         };
-        assert_eq!(
-            kv_tokens(&expr(proj, Vec::new())),
-            quote! { (v.0.clone()).1 }.to_string()
+        let input_type: KvTypes = (
+            Vec::new(),
+            vec![DataType::FixedTuple(vec![
+                DataType::Int32,
+                DataType::String,
+            ])],
         );
+        let tokens = codegen("")
+            .kv_arithmetic(&expr(proj, Vec::new()), false, &input_type)
+            .expect("tuple projection");
+        assert_eq!(tokens.to_string(), quote! { v.0.clone().1 }.to_string());
     }
 
     // --- Display lowering for `cat` ---
@@ -477,7 +563,7 @@ mod tests {
             index: 1,
         },
         true,
-        quote! { ::flowlog_runtime::intern::resolve((v.0.clone()).1) }
+        quote! { ::flowlog_runtime::intern::resolve(v.0.clone().1) }
     )]
     fn a_cat_factor_lowers_to_text(
         #[case] factor: FactorArgument,

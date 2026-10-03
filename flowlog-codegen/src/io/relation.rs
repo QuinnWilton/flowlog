@@ -189,7 +189,10 @@ mod tests {
     /// file input carries the parser's default delimiter, a tab.
     #[test]
     fn a_declaration_names_the_relation_and_its_tuple() {
-        let generated = generate(".decl R(id: int32, name: string)\n.input R\n", true);
+        let generated = generate(
+            ".decl R(id: int32, name: string)\n.input R\n.printsize R\n",
+            true,
+        );
         let expected = quote! {
             #[allow(non_camel_case_types)]
             pub(crate) struct Relr;

@@ -31,15 +31,9 @@ impl Compiler {
                 .expect("valid worker coordinates");
         };
 
-        let load_files: Vec<TokenStream> = edbs
-            .iter()
-            .filter_map(|relation| {
-                relation
-                    .input()
-                    .filter(|source| source.is_file_backed())
-                    .and_then(InputSource::filename)
-                    .map(|filename| (relation, filename))
-            })
+        let load_files: Vec<TokenStream> = self
+            .program
+            .file_inputs()
             .map(|(relation, filename)| {
                 let field = input_field_ident(relation.name());
                 let name = relation.raw_name();
@@ -84,7 +78,10 @@ impl Compiler {
                 barrier.wait();
             }
         } else {
-            quote! { inputs.close_static(); }
+            quote! {
+                inputs.apply_inline_all();
+                inputs.close_static();
+            }
         };
 
         Input {

@@ -54,8 +54,8 @@ impl Codegen {
             .zip(&param_types)
             .map(|(arg, ty)| {
                 let token = self.arithmetic_to_token(arg, string_intern, resolve_var)?;
-                // `token` is already an owned value: every arithmetic
-                // lowering clones the variables it reads.
+                // `token` is already an owned value: a variable read copies
+                // or clones its column.
                 Ok(if string_intern && *ty == DataType::String {
                     quote! { ::flowlog_runtime::intern::resolve(#token).to_string() }
                 } else {
@@ -129,20 +129,22 @@ mod tests {
         #[case] string_intern: bool,
         #[case] expected: TokenStream,
     ) {
-        let call = codegen(declaration)
-            .fncall_to_token(
-                "f",
-                &[value(0), value(1)],
-                string_intern,
-                &|arg| match arg {
-                    KV((false, idx)) => {
-                        let i = Index::from(*idx);
-                        Ok(quote! { v.#i.clone() })
-                    }
-                    other => Err(CodegenError::internal(format!("unexpected {other:?}"))),
-                },
-            )
-            .expect("declared UDF");
+        let call = codegen(&format!(
+            "{declaration}\n.decl R(x: int32)\n.input R\n.output R"
+        ))
+        .fncall_to_token(
+            "f",
+            &[value(0), value(1)],
+            string_intern,
+            &|arg| match arg {
+                KV((false, idx)) => {
+                    let i = Index::from(*idx);
+                    Ok(quote! { v.#i.clone() })
+                }
+                other => Err(CodegenError::internal(format!("unexpected {other:?}"))),
+            },
+        )
+        .expect("declared UDF");
         assert_eq!(call.to_string(), expected.to_string());
     }
 }

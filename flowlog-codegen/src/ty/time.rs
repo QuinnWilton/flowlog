@@ -32,11 +32,11 @@ impl Codegen {
         &self,
         mutability: Mutability,
     ) -> Result<(TokenStream, TokenStream), CodegenError> {
-        let product_step = quote! { timely::order::Product::new(Default::default(), 1) };
         match (self.program.is_incremental(), mutability) {
-            (false, Mutability::Static) => {
-                Ok((quote! { ::flowlog_runtime::time::OnceLoop }, product_step))
-            }
+            (false, Mutability::Static) => Ok((
+                quote! { ::flowlog_runtime::time::OnceLoop },
+                quote! { ::flowlog_runtime::timely::order::Product::new((), 1) },
+            )),
             (false, Mutability::Mutable) => Err(CodegenError::internal(
                 "a mutable loop in an engine without a mutable input",
             )),
@@ -44,9 +44,10 @@ impl Codegen {
                 quote! { ::flowlog_runtime::time::LexLoop },
                 quote! { ::flowlog_runtime::time::LexLoop::NEXT_ITERATION },
             )),
-            (true, Mutability::Mutable) => {
-                Ok((quote! { ::flowlog_runtime::time::EpochLoop }, product_step))
-            }
+            (true, Mutability::Mutable) => Ok((
+                quote! { ::flowlog_runtime::time::EpochLoop },
+                quote! { ::flowlog_runtime::timely::order::Product::new(0, 1) },
+            )),
         }
     }
 }

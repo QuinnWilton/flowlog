@@ -93,7 +93,7 @@ impl Codegen {
         let incremental = self.program.is_incremental();
         let (probe, step_loop) = if incremental {
             (
-                Some(quote! { let mut probe = ProbeHandle::new(); }),
+                Some(quote! { let probe = ProbeHandle::new(); }),
                 quote! {
                     while probe.less_than(&time_stamp) {
                         worker.step();

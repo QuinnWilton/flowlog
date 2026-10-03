@@ -10,12 +10,18 @@ use crate::Codegen;
 
 /// Returns a code generator over `source`, its types and idents seeded and
 /// every relation's mutability recorded from its declaration, as the strata
-/// would record it.
+/// would record it. An empty `source` stands for the smallest program the
+/// parser accepts, for tests that use only the generator's configuration.
 ///
 /// # Panics
 ///
 /// Panics when the program does not parse.
 pub(crate) fn codegen(source: &str) -> Codegen {
+    let source = if source.is_empty() {
+        ".decl R(x: int32)\n.output R\n"
+    } else {
+        source
+    };
     let mut config = Config::default();
     let program = flowlog_parser::test_harness::parse(source, &mut SourceMap::new(), &mut config)
         .unwrap_or_else(|e| panic!("test program does not parse: {e:?}"));

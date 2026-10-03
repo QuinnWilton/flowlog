@@ -14,7 +14,8 @@ use crate::program::Program;
 
 /// Prune dead components, materialize orphans, then drop repeated facts.
 /// Idempotent. Runs after type-check, which pins the literals the fact
-/// comparison reads.
+/// comparison reads. Demand starts from the `.output` and `.printsize`
+/// relations, which assembly guarantees exist.
 // Order matters: materialize must run after pruning so it cannot re-add a
 // dropped relation.
 pub fn prune(program: &mut Program) {
@@ -41,17 +42,6 @@ fn identify_needed_components(
         .into_iter()
         .map(|d| d.name().to_string())
         .collect();
-
-    // If no outputs, keep everything.
-    if needed_preds.is_empty() {
-        let all_indices = (0..all_rules.len()).collect();
-        let all_preds = program
-            .relations
-            .iter()
-            .map(|d| d.name().to_string())
-            .collect();
-        return ((all_indices, all_preds), HashSet::new());
-    }
 
     // Map: head name -> rule indices that derive it.
     let mut head_to_rules: HashMap<String, Vec<usize>> = HashMap::new();

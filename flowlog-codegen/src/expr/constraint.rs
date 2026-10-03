@@ -9,6 +9,7 @@ use quote::quote;
 use syn::Index;
 
 use crate::CodegenError;
+use crate::expr::term::constant::bool_value;
 use crate::expr::term::constant::const_to_token;
 
 /// Returns a row closure's constraint predicate, or `None` when there is no
@@ -70,15 +71,29 @@ fn constraint_predicate(
         .constant_eq_constraints()
         .as_ref()
         .iter()
-        .map(|(arg, c)| Ok((operand(arg)?, const_to_token(c, string_intern)?)));
+        .map(|(arg, c)| {
+            let lhs = operand(arg)?;
+            // A `bool` constant adds nothing: the binding, or its negation,
+            // is the predicate.
+            Ok(match bool_value(c) {
+                Some(true) => lhs,
+                Some(false) => quote! { !#lhs },
+                None => {
+                    let rhs = const_to_token(c, string_intern)?;
+                    quote! { #lhs == #rhs }
+                }
+            })
+        });
     let variable_eqs = constraints
         .variable_eq_constraints()
         .as_ref()
         .iter()
-        .map(|(l, r)| Ok((operand(l)?, operand(r)?)));
+        .map(|(l, r)| {
+            let (lhs, rhs) = (operand(l)?, operand(r)?);
+            Ok(quote! { #lhs == #rhs })
+        });
     let eqs = constant_eqs
         .chain(variable_eqs)
-        .map(|eq| eq.map(|(lhs, rhs)| quote! { #lhs == #rhs }))
         .collect::<Result<Vec<_>, CodegenError>>()?;
     Ok((!eqs.is_empty()).then(|| quote! { #( #eqs )&&* }))
 }
@@ -89,6 +104,7 @@ mod tests {
     use flowlog_parser::DataType;
     use flowlog_planner::planner::TransformationArgument::KV;
     use quote::format_ident;
+    use rstest::rstest;
 
     use super::*;
 
@@ -122,6 +138,26 @@ mod tests {
             pred.to_string(),
             quote! { v.1 == 7 && k.0 == v.0 }.to_string()
         );
+    }
+
+    /// A `bool` constant is no comparison: the binding is the predicate,
+    /// negated for `False`.
+    // Cases: constant, predicate.
+    #[rstest]
+    #[case("True", quote! { v.1 })]
+    #[case("False", quote! { !v.1 })]
+    fn a_bool_constant_is_the_binding_or_its_negation(
+        #[case] text: &str,
+        #[case] expected: TokenStream,
+    ) {
+        let constraints = Constraints::new(
+            vec![(KV((false, 1)), Constant::new(DataType::Bool, text))],
+            Vec::new(),
+        );
+        let pred = kv_constraint_predicate(&constraints, false)
+            .expect("kv arguments")
+            .expect("one equality");
+        assert_eq!(pred.to_string(), expected.to_string());
     }
 
     #[test]
