@@ -51,15 +51,11 @@ pub(crate) fn const_to_token(
             }
         }
         DataType::Bool => {
-            let b = match text {
-                "True" => true,
-                "False" => false,
-                _ => {
-                    return Err(CodegenError::internal(format!(
-                        "boolean constant `{text}` is neither `True` nor `False`"
-                    )));
-                }
-            };
+            let b = bool_value(constant).ok_or_else(|| {
+                CodegenError::internal(format!(
+                    "boolean constant `{text}` is neither `True` nor `False`"
+                ))
+            })?;
             quote! { #b }
         }
         DataType::IntLit | DataType::FloatLit => {
@@ -74,6 +70,16 @@ pub(crate) fn const_to_token(
             )));
         }
     })
+}
+
+/// Returns a `bool` constant's value; `None` for a constant of another type
+/// or with text that is neither `True` nor `False`.
+pub(crate) fn bool_value(constant: &Constant) -> Option<bool> {
+    match (constant.ty(), constant.text()) {
+        (DataType::Bool, "True") => Some(true),
+        (DataType::Bool, "False") => Some(false),
+        _ => None,
+    }
 }
 
 /// Returns a constant's spelling parsed as `T`.

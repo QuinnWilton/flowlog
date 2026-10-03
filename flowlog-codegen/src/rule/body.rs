@@ -99,22 +99,9 @@ impl Codegen {
                 let out = find_local_ident(local_fp_to_ident, output.fingerprint());
 
                 let input_arity = input.arity().1;
-                let (row_pat, row_fields) = row_params(
-                    input_arity,
-                    flow.key(),
-                    flow.value(),
-                    flow.compares(),
-                    flow.constraints(),
-                );
                 let input_type = self.find_global_type(input.fingerprint())?.clone();
                 let itype = input_type.1.clone();
-
                 let row_ty = internal_tuple_tokens(&itype, si);
-                let out_val = self.row_projection(flow.value(), &row_fields, si)?;
-                let cmp_pred =
-                    self.row_compare_predicate(flow.compares(), &row_fields, si, &input_type)?;
-                let cst_pred = row_constraint_predicate(flow.constraints(), &row_fields, si)?;
-                let pred = combine_predicates(vec![cmp_pred, cst_pred]);
 
                 // The cheapest operator that fits, in-place forms first: an
                 // identity projection with no predicate aliases the input
@@ -126,14 +113,36 @@ impl Codegen {
                 // also needs the projection to keep every column's type, so
                 // `*row = <projection>` typechecks.
                 let identity_projection = is_identity_row_projection(flow.value(), input_arity);
+                let has_predicate = !flow.compares().is_empty() || !flow.constraints().is_empty();
                 let row_copy = row_is_copy(&itype, si);
+                let is_alias = identity_projection && !has_predicate;
+                let is_filter = identity_projection && has_predicate && row_copy;
                 let type_preserving = !identity_projection
                     && row_copy
                     && self.row_projection_preserves_type(flow.value(), &input_type)?;
-                let is_identity = pred.is_none() && identity_projection;
+
+                // The row closure names only the columns the chosen form
+                // reads; an alias or a filter emits no projection.
+                let projected: &[ArithmeticArgument] = if is_alias || is_filter {
+                    &[]
+                } else {
+                    flow.value()
+                };
+                let (row_pat, row_fields) = row_params(
+                    input_arity,
+                    flow.key(),
+                    projected,
+                    flow.compares(),
+                    flow.constraints(),
+                );
+                let out_val = self.row_projection(flow.value(), &row_fields, si, &input_type)?;
+                let cmp_pred =
+                    self.row_compare_predicate(flow.compares(), &row_fields, si, &input_type)?;
+                let cst_pred = row_constraint_predicate(flow.constraints(), &row_fields, si)?;
+                let pred = combine_predicates(vec![cmp_pred, cst_pred]);
 
                 with_plan_graph(plan_graph, |plan_graph| {
-                    if is_identity {
+                    if is_alias {
                         // Copy rule `B :- A`: no operator is emitted, but still
                         // register a 0-op alias node so downstream references to
                         // this relation's fingerprint resolve in the profiler model.
@@ -154,8 +163,8 @@ impl Codegen {
                 });
 
                 match pred {
-                    None if identity_projection => Ok(quote! { let #out = #inp.clone(); }),
-                    Some(p) if identity_projection && row_copy => Ok(quote! {
+                    None if is_alias => Ok(quote! { let #out = #inp.clone(); }),
+                    Some(p) if is_filter => Ok(quote! {
                         let #out = ::flowlog_runtime::operators::flowlog_filter(
                             #inp.clone(),
                             #operator_name,
@@ -207,8 +216,8 @@ impl Codegen {
                 let row_ty = internal_tuple_tokens(&itype, si);
                 let out_expr = keyed_output(
                     output,
-                    self.row_projection(flow.key(), &row_fields, si)?,
-                    self.row_projection(flow.value(), &row_fields, si)?,
+                    self.row_projection(flow.key(), &row_fields, si, &input_type)?,
+                    self.row_projection(flow.value(), &row_fields, si, &input_type)?,
                 );
                 let cmp_pred =
                     self.row_compare_predicate(flow.compares(), &row_fields, si, &input_type)?;
@@ -277,7 +286,7 @@ impl Codegen {
                 });
 
                 let input_type = self.find_global_type(input.fingerprint())?.clone();
-                let out_val = self.kv_projection(flow.value(), si)?;
+                let out_val = self.kv_projection(flow.value(), si, &input_type)?;
                 let cmp_pred = self.kv_compare_predicate(flow.compares(), si, &input_type)?;
                 let cst_pred = kv_constraint_predicate(flow.constraints(), si)?;
                 let pred = combine_predicates(vec![cmp_pred, cst_pred]);
@@ -304,8 +313,8 @@ impl Codegen {
                 let input_type = self.find_global_type(input.fingerprint())?.clone();
                 let out_expr = keyed_output(
                     output,
-                    self.kv_projection(flow.key(), si)?,
-                    self.kv_projection(flow.value(), si)?,
+                    self.kv_projection(flow.key(), si, &input_type)?,
+                    self.kv_projection(flow.value(), si, &input_type)?,
                 );
                 let cmp_pred = self.kv_compare_predicate(flow.compares(), si, &input_type)?;
                 let cst_pred = kv_constraint_predicate(flow.constraints(), si)?;
@@ -352,9 +361,9 @@ impl Codegen {
                 });
 
                 let (jn_k, jn_lv, jn_rv) = join_params(flow.key(), flow.value(), flow.compares());
-                let out_val = self.join_projection(flow.value(), si)?;
                 let left_type = self.find_global_type(left.fingerprint())?.clone();
                 let right_type = self.find_global_type(right.fingerprint())?.clone();
+                let out_val = self.join_projection(flow.value(), si, &left_type, &right_type)?;
                 let cmp_pred =
                     self.join_compare_predicate(flow.compares(), si, &left_type, &right_type)?;
                 let join_body = join_body_tokens(cmp_pred, out_val);
@@ -388,13 +397,13 @@ impl Codegen {
                 });
 
                 let (jn_k, jn_lv, jn_rv) = join_params(flow.key(), flow.value(), flow.compares());
-                let out_expr = keyed_output(
-                    output,
-                    self.join_projection(flow.key(), si)?,
-                    self.join_projection(flow.value(), si)?,
-                );
                 let left_type = self.find_global_type(left.fingerprint())?.clone();
                 let right_type = self.find_global_type(right.fingerprint())?.clone();
+                let out_expr = keyed_output(
+                    output,
+                    self.join_projection(flow.key(), si, &left_type, &right_type)?,
+                    self.join_projection(flow.value(), si, &left_type, &right_type)?,
+                );
                 let cmp_pred =
                     self.join_compare_predicate(flow.compares(), si, &left_type, &right_type)?;
                 let join_body = join_body_tokens(cmp_pred, out_expr);
@@ -434,7 +443,10 @@ impl Codegen {
 
                 let (anti_param_k, anti_param_v) =
                     kv_params(flow.key(), flow.value(), flow.compares(), None);
-                let out_map_value = self.kv_projection(flow.value(), si)?;
+                // The closure sees the surviving right side's `(k, v)`; the
+                // left side only filters by key.
+                let input_type = self.find_global_type(right.fingerprint())?.clone();
+                let out_map_value = self.kv_projection(flow.value(), si, &input_type)?;
                 Ok(quote! {
                     let #out = ::flowlog_runtime::operators::flowlog_antijoin(
                         #l.clone(),
@@ -470,10 +482,13 @@ impl Codegen {
 
                 let (anti_param_k, anti_param_v) =
                     kv_params(flow.key(), flow.value(), flow.compares(), None);
+                // The closure sees the surviving right side's `(k, v)`; the
+                // left side only filters by key.
+                let input_type = self.find_global_type(right.fingerprint())?.clone();
                 let out_map_expr = keyed_output(
                     output,
-                    self.kv_projection(flow.key(), si)?,
-                    self.kv_projection(flow.value(), si)?,
+                    self.kv_projection(flow.key(), si, &input_type)?,
+                    self.kv_projection(flow.value(), si, &input_type)?,
                 );
                 let arrange_stmt = register_arrangement(arranged_map, output, &out);
                 Ok(quote! {

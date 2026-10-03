@@ -826,7 +826,7 @@ mod tests {
         let src = "
             .comp Left<T> { .decl L(x: T) }
             .comp Right<U> { .decl R(x: U) }
-            .comp Both : Left<number>, Right<symbol> { .decl B(x: number) }
+            .comp Both : Left<number>, Right<symbol> { .decl B(x: number) .output B }
             .init both = Both
         ";
         let program = assembled(src).expect("assembles");
@@ -864,6 +864,7 @@ mod tests {
         let src = "
             .decl Src(x: number)
             .decl Other(x: number)
+            .output Src
             .comp Left { .decl Keep(x: number)  Keep(x) :- Src(x). }
             .comp Right { .decl Foo(x: number) overridable  Foo(x) :- Src(x). }
             .comp Both : Left, Right {
@@ -1019,6 +1020,7 @@ mod tests {
             .comp Cfg { .type Context = symbol }
             .comp Analysis<Configuration> {
               .decl RunningThread(ctx:configuration.Context, v:Value)
+              .output RunningThread
               .init configuration = Configuration
             }
             .init mainAnalysis = Analysis<Cfg>
@@ -1044,6 +1046,7 @@ mod tests {
             .comp Analysis<Configuration> {
               .init configuration = Configuration
               .decl RunningThread(ctx:configuration.Context, v:Value)
+              .output RunningThread
             }
             .comp ConcreteConfiguration : AbstractConfiguration {
               .type Context = symbol
@@ -1069,6 +1072,7 @@ mod tests {
             .comp C {
               .type MethodType = symbol
               .decl R(mt:MethodType, i:number)
+              .output R
             }
             .init c = C
         ";
@@ -1087,6 +1091,7 @@ mod tests {
             .type Invo = symbol
             .comp AbstractConfiguration {
               .decl ContextRequest(ctx:Context, invo:Invo)
+              .output ContextRequest
             }
             .comp ConcreteConfiguration : AbstractConfiguration {
               .type Context = symbol
@@ -1108,6 +1113,7 @@ mod tests {
             .init basic = Lib
             .comp Analysis {
               .decl R(x:symbol)
+              .output R
               R(x) :- basic.SubtypeOf(x, _).
             }
             .init main = Analysis

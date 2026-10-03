@@ -51,27 +51,20 @@ pub(crate) fn assemble(pipeline: &Pipeline) -> io::Result<String> {
     )?;
 
     // `include!()` forbids inner attributes at the call site, so the whole
-    // body lives in an inner module carrying a blanket `#[allow(..)]`, then
-    // a top-level `pub use` re-exports the user-visible API. This keeps
-    // warnings on unused generated items from leaking into the consumer
-    // crate.
+    // body lives in an inner module carrying the `#[allow(..)]`, then a
+    // top-level `pub use` re-exports the user-visible API. Per
+    // docs/dev/code.md rule 8, the allowed lints are only those the user's
+    // declarations cause, which codegen cannot satisfy.
     Ok(pretty_print(quote! {
         pub use __flowlog_gen::*;
 
         #[allow(
-            dead_code,
-            unused_imports,
-            unused_variables,
-            unused_mut,
             non_camel_case_types,
             non_snake_case,
-            clippy::all,
+            clippy::disallowed_names,
+            clippy::type_complexity,
         )]
         mod __flowlog_gen {
-            use ::flowlog_runtime::differential_dataflow;
-            use ::flowlog_runtime::timely;
-            use ::flowlog_runtime::serde;
-            use ::flowlog_runtime::ordered_float;
             #lib_imports
             #declarations
             #rel_module
@@ -109,7 +102,9 @@ fn gen_udf_mod(has_udfs: bool, udf_file: Option<&Path>) -> io::Result<TokenStrea
     })?;
     let path_lit = abs.to_string_lossy().into_owned();
 
+    // The user's file may define functions this program does not call.
     Ok(quote! {
+        #[allow(dead_code)]
         #[path = #path_lit]
         mod udf;
     })

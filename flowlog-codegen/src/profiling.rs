@@ -392,9 +392,9 @@ mod tests {
     use super::*;
     use crate::test_harness::codegen;
 
-    const BATCH: &str = ".decl Edge(a: int32, b: int32)\n.input Edge(IO=\"file\")\n";
-    const INCREMENTAL: &str =
-        ".decl Edge(a: int32, b: int32) mutable\n.input Edge(IO=\"command\")\n";
+    const BATCH: &str = ".decl Edge(a: int32, b: int32)\n.input Edge(IO=\"file\")\n.output Edge\n";
+    const INCREMENTAL: &str = ".decl Edge(a: int32, b: int32) mutable\n\
+                               .input Edge(IO=\"command\")\n.output Edge\n";
 
     /// Returns a plan graph with one operator recorded.
     fn plan_graph() -> PlanGraph {

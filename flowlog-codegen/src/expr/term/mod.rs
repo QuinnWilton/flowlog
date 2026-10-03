@@ -15,6 +15,6 @@ pub(super) fn as_str(operand: &TokenStream, string_intern: bool) -> TokenStream 
     if string_intern {
         quote! { ::flowlog_runtime::intern::resolve(#operand) }
     } else {
-        quote! { (#operand).as_str() }
+        quote! { #operand.as_str() }
     }
 }

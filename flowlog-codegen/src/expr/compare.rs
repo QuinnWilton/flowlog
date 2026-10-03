@@ -15,6 +15,7 @@ use quote::quote;
 use crate::Codegen;
 use crate::CodegenError;
 use crate::expr::term::as_str;
+use crate::expr::term::constant::bool_value;
 use crate::ty::data::KvTypes;
 
 impl Codegen {
@@ -28,7 +29,7 @@ impl Codegen {
         input_type: &KvTypes,
     ) -> Result<Option<TokenStream>, CodegenError> {
         self.compare_predicate(comps, string_intern, (input_type, None), |cg, arg| {
-            cg.row_arithmetic(arg, fields, string_intern)
+            cg.row_arithmetic(arg, fields, string_intern, input_type)
         })
     }
 
@@ -42,7 +43,7 @@ impl Codegen {
         input_type: &KvTypes,
     ) -> Result<Option<TokenStream>, CodegenError> {
         self.compare_predicate(comps, string_intern, (input_type, None), |cg, arg| {
-            cg.kv_arithmetic(arg, string_intern)
+            cg.kv_arithmetic(arg, string_intern, input_type)
         })
     }
 
@@ -60,7 +61,7 @@ impl Codegen {
             comps,
             string_intern,
             (left_type, Some(right_type)),
-            |cg, arg| cg.join_arithmetic(arg, string_intern),
+            |cg, arg| cg.join_arithmetic(arg, string_intern, left_type, right_type),
         )
     }
 
@@ -101,8 +102,18 @@ impl Codegen {
         (left_type, right_type): (&KvTypes, Option<&KvTypes>),
         operand: &impl Fn(&mut Self, &ArithmeticArgument) -> Result<TokenStream, CodegenError>,
     ) -> Result<TokenStream, CodegenError> {
+        // A `bool` literal adds nothing to an equality: the other side is
+        // the predicate, or its negation.
+        if let Some((side, holds)) = bool_literal_operand(op, left, right) {
+            let x = operand(self, side)?;
+            return Ok(if holds {
+                x
+            } else {
+                quote! { !#x }
+            });
+        }
         // Either side may be an arithmetic expression, so both lower through
-        // the arithmetic builders, `.clone()` on each variable included;
+        // the arithmetic builders, each variable read as an owned value;
         // constraint.rs compares bare bindings because its sides are only
         // variables and constants.
         let l = operand(self, left)?;
@@ -134,8 +145,38 @@ impl Codegen {
                     #infix ::flowlog_runtime::intern::resolve(#r)
             }
         } else {
-            quote! { (#l) #infix (#r) }
+            quote! { #l #infix #r }
         })
+    }
+}
+
+/// Returns the side of an equality compared against a `bool` literal, and
+/// whether the comparison holds when that side is `true`: `x == true` and
+/// `x != false` keep `x`, `x == false` and `x != true` negate it. `None`
+/// for any other comparison.
+fn bool_literal_operand<'a>(
+    op: &ComparisonOperator,
+    left: &'a ArithmeticArgument,
+    right: &'a ArithmeticArgument,
+) -> Option<(&'a ArithmeticArgument, bool)> {
+    let equal = match op {
+        ComparisonOperator::Equal => true,
+        ComparisonOperator::NotEqual => false,
+        _ => return None,
+    };
+    match (bool_literal(left), bool_literal(right)) {
+        (None, Some(value)) => Some((left, equal == value)),
+        (Some(value), None) => Some((right, equal == value)),
+        // Two literals never reach codegen: the fold stage evaluates them.
+        _ => None,
+    }
+}
+
+/// Returns a bare `bool` literal's value.
+fn bool_literal(expr: &ArithmeticArgument) -> Option<bool> {
+    match expr.init() {
+        FactorArgument::Const(c) if expr.rest().is_empty() => bool_value(c),
+        _ => None,
     }
 }
 
@@ -150,7 +191,7 @@ fn contains_predicate(
     let neg = negation(negated);
     let needle = as_str(needle, string_intern);
     let haystack = as_str(haystack, string_intern);
-    quote! { #neg (#haystack).contains(#needle) }
+    quote! { #neg #haystack.contains(#needle) }
 }
 
 /// Returns `match`: `true` when the `pattern` regular expression matches the
@@ -238,10 +279,52 @@ mod tests {
                 &right,
                 string_intern,
                 (&input_type, None),
-                &|cg, arg| cg.kv_arithmetic(arg, string_intern),
+                &|cg, arg| cg.kv_arithmetic(arg, string_intern, &input_type),
             )
             .expect("kv comparison")
             .to_string()
+    }
+
+    /// A `bool` literal adds nothing to a comparison: the other side is
+    /// the predicate, negated for `== false` and `!= true`.
+    // Cases: operator, literal, predicate.
+    #[rstest]
+    #[case(ComparisonOperator::Equal, "True", quote! { v.0 })]
+    #[case(ComparisonOperator::NotEqual, "False", quote! { v.0 })]
+    #[case(ComparisonOperator::Equal, "False", quote! { !v.0 })]
+    #[case(ComparisonOperator::NotEqual, "True", quote! { !v.0 })]
+    fn a_comparison_with_a_bool_literal_is_the_other_side(
+        #[case] op: ComparisonOperator,
+        #[case] literal: &str,
+        #[case] expected: TokenStream,
+    ) {
+        let right = arg(FactorArgument::Const(Constant::new(
+            DataType::Bool,
+            literal,
+        )));
+        assert_eq!(
+            kv_comparison(op, right, DataType::Bool, false),
+            expected.to_string()
+        );
+    }
+
+    #[test]
+    fn a_bool_literal_on_the_left_reads_the_right_side() {
+        let input_type: KvTypes = (Vec::new(), vec![DataType::Bool, DataType::Bool]);
+        let predicate = codegen("")
+            .comparison(
+                &ComparisonOperator::Equal,
+                &arg(FactorArgument::Const(Constant::new(
+                    DataType::Bool,
+                    "False",
+                ))),
+                &arg(FactorArgument::Var(KV((false, 1)))),
+                false,
+                (&input_type, None),
+                &|cg, arg| cg.kv_arithmetic(arg, false, &input_type),
+            )
+            .expect("kv comparison");
+        assert_eq!(predicate.to_string(), quote! { !v.1 }.to_string());
     }
 
     #[test]
@@ -272,7 +355,7 @@ mod tests {
                 DataType::Int32,
                 false
             ),
-            quote! { (v.0.clone()) #infix (v.1.clone()) }.to_string()
+            quote! { v.0 #infix v.1 }.to_string()
         );
     }
 
@@ -282,11 +365,11 @@ mod tests {
     #[case(
         ComparisonOperator::LessThan,
         quote! {
-            ::flowlog_runtime::intern::resolve(v.0.clone())
-                < ::flowlog_runtime::intern::resolve(v.1.clone())
+            ::flowlog_runtime::intern::resolve(v.0)
+                < ::flowlog_runtime::intern::resolve(v.1)
         }
     )]
-    #[case(ComparisonOperator::Equal, quote! { (v.0.clone()) == (v.1.clone()) })]
+    #[case(ComparisonOperator::Equal, quote! { v.0 == v.1 })]
     fn an_interned_string_ordering_compares_the_text(
         #[case] op: ComparisonOperator,
         #[case] expected: TokenStream,
@@ -312,7 +395,7 @@ mod tests {
                 false
             ),
             quote! {
-                ! ((v.1.clone()).as_str()).contains((v.0.clone()).as_str())
+                ! v.1.clone().as_str().contains(v.0.clone().as_str())
             }
             .to_string()
         );
@@ -333,7 +416,7 @@ mod tests {
                 &arg(FactorArgument::Var(KV((false, 0)))),
                 false,
                 (&input_type, None),
-                &|cg, arg| cg.kv_arithmetic(arg, false),
+                &|cg, arg| cg.kv_arithmetic(arg, false, &input_type),
             )
             .expect("match comparison");
         assert_eq!(
@@ -344,7 +427,7 @@ mod tests {
                 > = ::std::sync::LazyLock::new(|| {
                     ::flowlog_runtime::regex::Regex::new("^(?:a.*)$").ok()
                 });
-                RE.as_ref().is_some_and(|re| re.is_match((v.0.clone()).as_str()))
+                RE.as_ref().is_some_and(|re| re.is_match(v.0.clone().as_str()))
             }}
             .to_string()
         );
@@ -361,8 +444,8 @@ mod tests {
                 false
             ),
             quote! {
-                ::flowlog_runtime::regex::Regex::new(&format!("^(?:{})$", (v.0.clone()).as_str()))
-                    .map_or(false, |re| re.is_match((v.1.clone()).as_str()))
+                ::flowlog_runtime::regex::Regex::new(&format!("^(?:{})$", v.0.clone().as_str()))
+                    .map_or(false, |re| re.is_match(v.1.clone().as_str()))
             }
             .to_string()
         );

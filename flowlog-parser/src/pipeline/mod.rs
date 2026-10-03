@@ -3,7 +3,8 @@
 //!
 //! 1. `include`: splice `.include` files into one source string.
 //! 2. `assemble`: pest-parse, build the [`Program`] (inlining,
-//!    directives, validation, assignment substitution).
+//!    directives, validation, assignment substitution); a program with no
+//!    `.output` or `.printsize` is rejected here.
 //! 3. `typecheck`: check types and subtypes; pin literals, lower casts.
 //! 4. `fold`: constant folding and dead-rule elimination.
 //! 5. `prune`: dead-component pruning, orphan materialization, and

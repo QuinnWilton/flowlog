@@ -176,7 +176,7 @@ impl Codegen {
     /// engine, which runs to completion instead.
     fn gen_probe(&self) -> TokenStream {
         if self.program.is_incremental() {
-            quote! { .probe_with(&mut probe) }
+            quote! { .probe_with(&probe) }
         } else {
             quote! {}
         }
@@ -239,14 +239,16 @@ mod tests {
                 .inspect(move |(data, time, diff)| {
                     local_emitter_r.record(data, time, *diff);
                 })
-                .probe_with(&mut probe);
+                .probe_with(&probe);
         }}
     )]
     fn a_row_inspector_records_each_change(
         #[case] mutability: &str,
         #[case] expected: TokenStream,
     ) {
-        let codegen = codegen(&format!(".decl R(a: int32){mutability}\n.input R\n"));
+        let codegen = codegen(&format!(
+            ".decl R(a: int32){mutability}\n.input R\n.output R\n"
+        ));
         let input_mutability = codegen.program.edbs()[0].input_mutability();
         let tokens = codegen.gen_row_inspector(
             &format_ident!("r"),
@@ -286,14 +288,16 @@ mod tests {
                 .inspect(move |(_data, time, size)| {
                     emitter_r.record_size(time, *size);
                 })
-                .probe_with(&mut probe);
+                .probe_with(&probe);
         }}
     )]
     fn a_size_inspector_counts_at_the_relations_weight(
         #[case] mutability: &str,
         #[case] expected: TokenStream,
     ) {
-        let codegen = codegen(&format!(".decl R(a: int32){mutability}\n.input R\n"));
+        let codegen = codegen(&format!(
+            ".decl R(a: int32){mutability}\n.input R\n.output R\n"
+        ));
         let input_mutability = codegen.program.edbs()[0].input_mutability();
         let tokens = codegen.gen_size_inspector(
             &format_ident!("r"),

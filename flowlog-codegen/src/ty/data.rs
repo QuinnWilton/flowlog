@@ -119,14 +119,7 @@ impl Codegen {
     ) -> Result<DataType, CodegenError> {
         match factor {
             FactorArgument::Var(TransformationArgument::KV((is_key, idx))) => {
-                slot(left_type, *is_key).get(*idx).cloned().ok_or_else(|| {
-                    CodegenError::internal(format!(
-                        "KV slot out of bounds: is_key={is_key}, idx={idx}, \
-                     left shape=({}, {})",
-                        left_type.0.len(),
-                        left_type.1.len()
-                    ))
-                })
+                slot_type(left_type, *is_key, *idx).cloned()
             }
             FactorArgument::Var(TransformationArgument::Jn((is_left, is_key, idx))) => {
                 let base = if *is_left {
@@ -138,11 +131,7 @@ impl Codegen {
                         )
                     })?
                 };
-                slot(base, *is_key).get(*idx).cloned().ok_or_else(|| {
-                    CodegenError::internal(format!(
-                        "join slot out of bounds: is_left={is_left}, is_key={is_key}, idx={idx}"
-                    ))
-                })
+                slot_type(base, *is_key, *idx).cloned()
             }
             FactorArgument::Const(c) => c.data_type().ok_or_else(|| {
                 CodegenError::internal(format!(
@@ -202,9 +191,22 @@ impl Codegen {
     }
 }
 
-/// Returns the key types of `tp` when `is_key`, else its value types.
-fn slot(tp: &KvTypes, is_key: bool) -> &[DataType] {
-    if is_key { &tp.0 } else { &tp.1 }
+/// Returns the type of slot `idx` of `types`' keys (`is_key`) or values, or
+/// an internal error when no such slot exists.
+pub(crate) fn slot_type(
+    types: &KvTypes,
+    is_key: bool,
+    idx: usize,
+) -> Result<&DataType, CodegenError> {
+    let (keys, values) = types;
+    let slots = if is_key { keys } else { values };
+    slots.get(idx).ok_or_else(|| {
+        CodegenError::internal(format!(
+            "slot out of bounds: is_key={is_key}, idx={idx}, shape=({}, {})",
+            keys.len(),
+            values.len()
+        ))
+    })
 }
 
 // =============================================================================
@@ -263,14 +265,16 @@ pub(crate) fn user_column_tokens(dt: &DataType) -> TokenStream {
     }
 }
 
-/// Returns `true` if every column lowers to a `Copy` Rust type (see
-/// [`internal_column_tokens`]): a raw `String` leaf is the only non-`Copy`
-/// lowering, and interning replaces those with `Spur` keys.
+/// Returns `true` if a column of `data_type` lowers to a `Copy` Rust type
+/// (see [`internal_column_tokens`]): a raw `String` leaf is the only
+/// non-`Copy` lowering, and interning replaces those with `Spur` keys.
+pub(crate) fn column_is_copy(data_type: &DataType, string_intern: bool) -> bool {
+    string_intern || !data_type.any_scalar(&|l| matches!(l, DataType::String))
+}
+
+/// Returns `true` if every column of `types` is `Copy` ([`column_is_copy`]).
 pub(crate) fn row_is_copy(types: &[DataType], string_intern: bool) -> bool {
-    string_intern
-        || !types
-            .iter()
-            .any(|dt| dt.any_scalar(&|l| matches!(l, DataType::String)))
+    types.iter().all(|dt| column_is_copy(dt, string_intern))
 }
 
 /// Returns a column's internal Rust type: a float wrapped in `OrderedFloat`

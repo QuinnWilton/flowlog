@@ -1,9 +1,9 @@
 //! `use` statements emitted into the library-mode generated file.
 //!
-//! Every external crate reference is funneled through `::flowlog_runtime::`
-//! so the consumer only needs `flowlog-runtime` in `[dependencies]`: DD,
-//! timely, `lasso`, `ordered_float`, `serde` are all re-exported from
-//! there.
+//! Generated code spells every external crate path through
+//! `::flowlog_runtime::`, which re-exports them, so the consumer needs only
+//! `flowlog-runtime` in `[dependencies]` and this module imports nothing
+//! external by name.
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -15,7 +15,6 @@ pub(crate) fn gen_lib_imports(relops_body: &TokenStream, profile: bool) -> Token
             #relops_body
         }
         use relops::*;
-        use std::sync::Arc;
     }];
 
     out.push(profile_imports(profile));

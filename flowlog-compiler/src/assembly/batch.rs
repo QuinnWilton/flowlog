@@ -7,15 +7,16 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::io::input::Input;
+use crate::io::output::Output;
 
-/// Returns the batch `main`: startup, a single dataflow run, and the outputs
-/// after the workers join. `emit_output` may reference only state declared
-/// outside the workers.
+/// Returns the batch `main`: the runtime arguments and output setup, a
+/// single dataflow run, and the outputs after the workers join. The emit
+/// fragment may reference only state declared outside the workers.
 pub(super) fn gen_batch_main(
     skeleton: &Skeleton,
     input: &Input,
-    startup: &TokenStream,
-    emit_output: &TokenStream,
+    runtime_args: &TokenStream,
+    output: &Output,
 ) -> TokenStream {
     let Skeleton {
         emitters,
@@ -32,10 +33,15 @@ pub(super) fn gen_batch_main(
         load_files,
         ..
     } = input;
+    let Output {
+        initialize: initialize_output,
+        emit: emit_output,
+    } = output;
 
     quote! {
         fn main() {
-            #startup
+            #runtime_args
+            #initialize_output
 
             #emitters
 

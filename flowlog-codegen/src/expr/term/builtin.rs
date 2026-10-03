@@ -2,7 +2,9 @@
 
 use flowlog_parser::BuiltinOperator;
 use flowlog_planner::planner::ArithmeticArgument;
+use flowlog_planner::planner::FactorArgument;
 use flowlog_planner::planner::TransformationArgument;
+use proc_macro2::Literal;
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -29,15 +31,20 @@ impl Codegen {
                 // Char count, not byte count: Souffle semantics.
                 let [s] = self.value_operands(op, args, string_intern, resolve_var)?;
                 let s = as_str(&s, string_intern);
-                Ok(quote! { ((#s).chars().count() as i32) })
+                Ok(quote! { (#s.chars().count() as i32) })
             }
             BuiltinOperator::Substr => {
-                let [s, start, len] = self.value_operands(op, args, string_intern, resolve_var)?;
+                let [s, start, len] = operands(op, args)?;
+                let s = self.arithmetic_to_token(s, string_intern, resolve_var)?;
                 let s = as_str(&s, string_intern);
+                // `skip(0)` is a no-op clippy denies.
+                let skip = (index_literal(start) != Some(0))
+                    .then(|| self.index_operand(start, string_intern, resolve_var))
+                    .transpose()?
+                    .map(|start| quote! { .skip(#start) });
+                let len = self.index_operand(len, string_intern, resolve_var)?;
                 Ok(emit_string(
-                    quote! {
-                        (#s).chars().skip((#start) as usize).take((#len) as usize).collect::<String>()
-                    },
+                    quote! { #s.chars() #skip .take(#len).collect::<String>() },
                     string_intern,
                 ))
             }
@@ -47,38 +54,98 @@ impl Codegen {
                 // per-symbol id.
                 debug_assert!(string_intern);
                 let [s] = self.value_operands(op, args, string_intern, resolve_var)?;
-                Ok(quote! { ((#s).into_inner().get() as i32) })
+                Ok(quote! { (#s.into_inner().get() as i32) })
             }
             BuiltinOperator::ToString => {
-                let [n] = self.value_operands(op, args, string_intern, resolve_var)?;
-                Ok(emit_string(quote! { (#n).to_string() }, string_intern))
+                let [n] = operands(op, args)?;
+                let value = self.arithmetic_to_token(n, string_intern, resolve_var)?;
+                // `.to_string()` would bind to an expression's last factor,
+                // and does not lex after an integer literal; any other
+                // factor is one term.
+                let grouped = !n.rest.is_empty()
+                    || matches!(&n.init, FactorArgument::Const(c) if c.ty().is_integer());
+                let receiver = if grouped {
+                    quote! { (#value) }
+                } else {
+                    value
+                };
+                Ok(emit_string(quote! { #receiver.to_string() }, string_intern))
             }
             BuiltinOperator::ToNumber => {
                 // 0 on parse failure keeps the function total; Souffle
                 // leaves that case unspecified.
                 let [s] = self.value_operands(op, args, string_intern, resolve_var)?;
                 let s = as_str(&s, string_intern);
-                Ok(quote! { ((#s).parse::<i32>().unwrap_or(0)) })
+                Ok(quote! { #s.parse::<i32>().unwrap_or(0) })
             }
             BuiltinOperator::Cat => {
                 // `cat` formats its arguments, so they lower to display text
-                // rather than values. After typecheck each is a string and
-                // so a single factor: only `cat` itself builds a compound
-                // string, and it is a factor.
-                let [left, right] = operands(op, args)?;
-                debug_assert!(
-                    left.rest.is_empty() && right.rest.is_empty(),
-                    "cat() arg is a single factor after typecheck"
-                );
-                let left = self.factor_to_display_token(&left.init, string_intern, resolve_var)?;
-                let right =
-                    self.factor_to_display_token(&right.init, string_intern, resolve_var)?;
+                // rather than values, and a nested `cat` contributes its
+                // parts to the same `format!`.
+                let mut parts = Vec::new();
+                for arg in operands::<2>(op, args)? {
+                    self.cat_parts(arg, string_intern, resolve_var, &mut parts)?;
+                }
+                let template = "{}".repeat(parts.len());
                 Ok(emit_string(
-                    quote! { format!("{}{}", #left, #right) },
+                    quote! { format!(#template, #(#parts),*) },
                     string_intern,
                 ))
             }
         }
+    }
+
+    /// Appends the display text of a `cat` argument to `parts`: a nested
+    /// `cat`'s arguments one by one, any other factor as one part.
+    fn cat_parts<F>(
+        &mut self,
+        arg: &ArithmeticArgument,
+        string_intern: bool,
+        resolve_var: &F,
+        parts: &mut Vec<TokenStream>,
+    ) -> Result<(), CodegenError>
+    where
+        F: Fn(&TransformationArgument) -> Result<TokenStream, CodegenError>,
+    {
+        // After typecheck each argument is a string and so a single factor:
+        // only `cat` itself builds a compound string, and it is a factor.
+        debug_assert!(
+            arg.rest.is_empty(),
+            "cat() arg is a single factor after typecheck"
+        );
+        match &arg.init {
+            FactorArgument::Builtin {
+                op: BuiltinOperator::Cat,
+                args,
+            } => {
+                for inner in args {
+                    self.cat_parts(inner, string_intern, resolve_var, parts)?;
+                }
+            }
+            factor => {
+                parts.push(self.factor_to_display_token(factor, string_intern, resolve_var)?)
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns `arg` as a `usize` index: an integer literal keeps its value
+    /// with the suffix, anything else is cast.
+    fn index_operand<F>(
+        &mut self,
+        arg: &ArithmeticArgument,
+        string_intern: bool,
+        resolve_var: &F,
+    ) -> Result<TokenStream, CodegenError>
+    where
+        F: Fn(&TransformationArgument) -> Result<TokenStream, CodegenError>,
+    {
+        if let Some(index) = index_literal(arg) {
+            let literal = Literal::usize_suffixed(index);
+            return Ok(quote! { #literal });
+        }
+        let value = self.arithmetic_to_token(arg, string_intern, resolve_var)?;
+        Ok(quote! { (#value) as usize })
     }
 
     /// Returns a built-in's `N` arguments lowered as values.
@@ -98,6 +165,14 @@ impl Codegen {
             *value = self.arithmetic_to_token(arg, string_intern, resolve_var)?;
         }
         Ok(values)
+    }
+}
+
+/// Returns `arg`'s value if it is a bare non-negative integer literal.
+fn index_literal(arg: &ArithmeticArgument) -> Option<usize> {
+    match &arg.init {
+        FactorArgument::Const(c) if arg.rest.is_empty() => c.text().parse().ok(),
+        _ => None,
     }
 }
 
@@ -160,28 +235,28 @@ mod tests {
     #[case::strlen(
         BuiltinOperator::Strlen,
         false,
-        quote! { (((v.0.clone()).as_str()).chars().count() as i32) }
+        quote! { (v.0.clone().as_str().chars().count() as i32) }
     )]
     #[case::interned_strlen(
         BuiltinOperator::Strlen,
         true,
-        quote! { ((::flowlog_runtime::intern::resolve(v.0.clone())).chars().count() as i32) }
+        quote! { (::flowlog_runtime::intern::resolve(v.0.clone()).chars().count() as i32) }
     )]
     #[case::ord(
         BuiltinOperator::Ord,
         true,
-        quote! { ((v.0.clone()).into_inner().get() as i32) }
+        quote! { (v.0.clone().into_inner().get() as i32) }
     )]
-    #[case::to_string(BuiltinOperator::ToString, false, quote! { (v.0.clone()).to_string() })]
+    #[case::to_string(BuiltinOperator::ToString, false, quote! { v.0.clone().to_string() })]
     #[case::interned_to_string(
         BuiltinOperator::ToString,
         true,
-        quote! { ::flowlog_runtime::intern::intern(&(v.0.clone()).to_string()) }
+        quote! { ::flowlog_runtime::intern::intern(&v.0.clone().to_string()) }
     )]
     #[case::to_number(
         BuiltinOperator::ToNumber,
         false,
-        quote! { (((v.0.clone()).as_str()).parse::<i32>().unwrap_or(0)) }
+        quote! { v.0.clone().as_str().parse::<i32>().unwrap_or(0) }
     )]
     fn a_unary_built_in_lowers_to_its_template(
         #[case] op: BuiltinOperator,
@@ -200,13 +275,61 @@ mod tests {
                 false
             ),
             quote! {
-                ((v.0.clone()).as_str())
+                v.0.clone().as_str()
                     .chars()
                     .skip((v.1.clone()) as usize)
                     .take((v.2.clone()) as usize)
                     .collect::<String>()
             }
             .to_string()
+        );
+    }
+
+    /// A literal index is a `usize` literal, a computed one a cast, and a
+    /// zero start skips nothing.
+    // Cases: start literal, lowering.
+    #[rstest]
+    #[case::zero_start(
+        "0",
+        quote! { v.0.clone().as_str().chars().take(2usize).collect::<String>() }
+    )]
+    #[case::literal_start(
+        "1",
+        quote! { v.0.clone().as_str().chars().skip(1usize).take(2usize).collect::<String>() }
+    )]
+    fn substr_literal_indices_need_no_cast(#[case] start: &str, #[case] expected: TokenStream) {
+        let literal = |n: &str| ArithmeticArgument {
+            init: FactorArgument::Const(Constant::new(DataType::Int32, n)),
+            rest: Vec::new(),
+        };
+        assert_eq!(
+            lower(
+                BuiltinOperator::Substr,
+                &[value(0), literal(start), literal("2")],
+                false
+            ),
+            expected.to_string()
+        );
+    }
+
+    #[test]
+    fn a_nested_cat_formats_in_one_call() {
+        let inner = ArithmeticArgument {
+            init: FactorArgument::Builtin {
+                op: BuiltinOperator::Cat,
+                args: vec![
+                    ArithmeticArgument {
+                        init: FactorArgument::Const(Constant::new(DataType::String, " ")),
+                        rest: Vec::new(),
+                    },
+                    value(1),
+                ],
+            },
+            rest: Vec::new(),
+        };
+        assert_eq!(
+            lower(BuiltinOperator::Cat, &[value(0), inner], false),
+            quote! { format!("{}{}{}", v.0.clone(), " ", v.1.clone()) }.to_string()
         );
     }
 

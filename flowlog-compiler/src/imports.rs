@@ -15,18 +15,10 @@ pub(crate) fn gen_imports(config: &Config, program: &Program) -> TokenStream {
     let mut out = Vec::<TokenStream>::new();
 
     out.push(quote! {
-        // Mechanically generated dataflow routinely leaves intermediate
-        // collection bindings unused, e.g. a relation declared (with `.input`
-        // or inline facts) yet never referenced by any rule body, or a derived
-        // collection whose only consumer is an output drain through a separate
-        // handle. These are valid Datalog (Souffle accepts them); relax just the
-        // unused-variable lint on the generated binary while `-Dwarnings` keeps
-        // every other lint class fatal.
-        #![allow(unused_variables)]
-
-        // Relation names may legally begin with `_` (DOOP's `basic._MethodLookup_*`);
-        // joined with their component prefix they synthesize binding idents with
-        // consecutive underscores, which `non_snake_case` rejects.
+        // joined with their component prefix they synthesize binding idents
+        // with consecutive underscores, which `non_snake_case` rejects.
+        // Every other warning is a generator bug, and `-Dwarnings` keeps it
+        // fatal (docs/dev/code.md rule 8).
         #![allow(non_snake_case)]
 
         mod relation;

@@ -26,7 +26,8 @@ use crate::ty::diff::weight_tokens;
 /// method past the inline facts drives the loaders of one mutability. A
 /// static input is loaded once: the driver ends it with `close_static`
 /// before the first advance. A mutable one advances each epoch and closes
-/// with `close_mutable` when the driver quits.
+/// with `close_mutable` when the driver quits; the epoch methods exist only
+/// when some input is mutable, since only a transaction driver calls them.
 pub(super) fn gen_inputs_container(edbs: &[&Relation], string_intern: bool) -> TokenStream {
     let mut fields = Vec::new();
     let mut parameters = Vec::new();
@@ -63,6 +64,16 @@ pub(super) fn gen_inputs_container(edbs: &[&Relation], string_intern: bool) -> T
         }
     }
 
+    // The epoch methods belong to the transaction driver, which exists only
+    // when some input is mutable; a single-run driver never calls them.
+    let epoch_methods = (!advance.is_empty()).then(|| {
+        quote! {
+            pub fn advance_mutable_to(&mut self, t: Ts) { #(#advance)* }
+            pub fn flush_mutable(&mut self) { #(#flush)* }
+            pub fn close_mutable(&mut self) { #(#close_mutable)* }
+        }
+    });
+
     // Worker helpers need the whole set of differently typed loaders. A
     // container keeps their parameter lists independent of relation count,
     // at the cost of thin forwarding methods in generated code.
@@ -71,7 +82,6 @@ pub(super) fn gen_inputs_container(edbs: &[&Relation], string_intern: bool) -> T
             #(#fields,)*
         }
 
-        #[allow(dead_code, unused_variables)]
         impl Inputs {
             pub fn new(
                 #(#parameters,)*
@@ -83,10 +93,8 @@ pub(super) fn gen_inputs_container(edbs: &[&Relation], string_intern: bool) -> T
             }
 
             pub fn apply_inline_all(&mut self) { #(#inline)* }
-            pub fn advance_mutable_to(&mut self, t: Ts) { #(#advance)* }
-            pub fn flush_mutable(&mut self) { #(#flush)* }
             pub fn close_static(&mut self) { #(#close_static)* }
-            pub fn close_mutable(&mut self) { #(#close_mutable)* }
+            #epoch_methods
         }
     }
 }
@@ -179,7 +187,9 @@ mod tests {
         #[case] mutability: &str,
         #[case] weight: TokenStream,
     ) {
-        let mut codegen = codegen(&format!(".decl A(x: int32){mutability}\n.input A\n"));
+        let mut codegen = codegen(&format!(
+            ".decl A(x: int32){mutability}\n.input A\n.output A\n"
+        ));
         let expected = quote! {
             use ::flowlog_runtime::differential_dataflow::input::Input;
             let (ha, rel_0_a) = scope.new_collection::<(i32,), #weight>();
@@ -200,8 +210,8 @@ mod tests {
 
     // Cases: program, handles.
     #[rstest]
-    #[case::one_input(".decl A(x: int32)\n.input A", &["ha"])]
-    #[case::two_inputs(".decl B(x: int32)\n.input B\n.decl A(x: int32)\n.input A", &["hb", "ha"])]
+    #[case::one_input(".decl A(x: int32)\n.input A\n.output A", &["ha"])]
+    #[case::two_inputs(".decl B(x: int32)\n.input B\n.decl A(x: int32)\n.input A\n.output A\n.output B", &["hb", "ha"])]
     fn the_handles_are_every_input_in_declaration_order(
         #[case] source: &str,
         #[case] expected: &[&str],
@@ -283,17 +293,28 @@ mod tests {
 
     #[test]
     fn no_inputs_generate_an_empty_container_with_no_op_lifecycle_methods() {
-        let generated = generate("", false);
+        let generated = generate(".decl Z(x: int32)\n.output Z", false);
         for expected in [
             quote! { pub(crate) struct Inputs {} },
             quote! { Ok(Self {}) },
             quote! { pub fn apply_inline_all(&mut self) {} },
-            quote! { pub fn advance_mutable_to(&mut self, t: Ts) {} },
-            quote! { pub fn flush_mutable(&mut self) {} },
             quote! { pub fn close_static(&mut self) {} },
-            quote! { pub fn close_mutable(&mut self) {} },
         ] {
             assert!(generated.contains(&expected.to_string()), "{generated}");
+        }
+    }
+
+    /// A single-run driver never advances or closes a mutable input, so a
+    /// program without one gets no epoch methods to leave unused.
+    #[test]
+    fn a_program_without_a_mutable_input_has_no_epoch_methods() {
+        let generated = generate(
+            ".decl Node(name: string)\n.input Node\n.decl Out(name: string)\nOut(x) :- Node(x).\n.output Out\n",
+            false,
+        );
+        assert!(generated.contains("fn close_static"), "{generated}");
+        for absent in ["advance_mutable_to", "flush_mutable", "close_mutable"] {
+            assert!(!generated.contains(absent), "{generated}");
         }
     }
 }

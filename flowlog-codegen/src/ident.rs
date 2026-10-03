@@ -204,7 +204,7 @@ mod tests {
     /// intermediate collection displays as its ident.
     #[test]
     fn display_names_use_the_source_spelling_of_a_relation() {
-        let codegen = codegen(".decl Edge(x: int32)\n.input Edge\n");
+        let codegen = codegen(".decl Edge(x: int32)\n.input Edge\n.output Edge\n");
         let edge = codegen.program.relations()[0].fingerprint();
 
         assert_eq!(codegen.find_global_ident(edge).to_string(), "rel_0_edge");

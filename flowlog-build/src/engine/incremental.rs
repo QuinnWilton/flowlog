@@ -35,6 +35,16 @@ pub(crate) fn gen_lib_incremental_engine(
     let nullary_edbs: Vec<&Relation> = edbs.iter().copied().filter(|r| r.arity() == 0).collect();
 
     let inc_imports = gen_imports();
+    let slot_aliases = (!non_nullary_edbs.is_empty()).then(|| {
+        quote! {
+            /// A relation's staged rows, one batch per `insert_*` or
+            /// `remove_*` call, each with its weight.
+            type Batches<T, W> = Vec<(Vec<T>, W)>;
+            /// The shared slot a relation's batches pass through from the
+            /// host to the workers at a commit.
+            type Slot<T, W> = Arc<::std::sync::Mutex<Arc<Batches<T, W>>>>;
+        }
+    });
     let engine_struct = gen_engine_struct(program, &non_nullary_edbs, &nullary_edbs);
     let new_body = gen_new_body(
         program,
@@ -50,6 +60,7 @@ pub(crate) fn gen_lib_incremental_engine(
 
     quote! {
         #inc_imports
+        #slot_aliases
 
         #engine_struct
 
@@ -122,6 +133,7 @@ pub(crate) fn gen_lib_incremental_engine(
 
 fn gen_imports() -> TokenStream {
     quote! {
+        use std::sync::Arc;
         use ::flowlog_runtime::timely::dataflow::operators::probe::Handle as ProbeHandle;
         use ::flowlog_runtime::txn::{TxnAction, TxnState};
     }
@@ -140,8 +152,8 @@ fn gen_engine_struct(
         .iter()
         .map(|rel| {
             let ident = staged_ident(rel);
-            let batches = batches_type(rel);
-            quote! { #ident: #batches }
+            let (tuple, weight) = slot_params(rel);
+            quote! { #ident: Batches<#tuple, #weight> }
         })
         .collect();
 
@@ -158,10 +170,8 @@ fn gen_engine_struct(
         .iter()
         .map(|rel| {
             let ident = slots_ident(rel);
-            let batches = batches_type(rel);
-            quote! {
-                #ident: Arc<::std::sync::Mutex<Arc<#batches>>>
-            }
+            let (tuple, weight) = slot_params(rel);
+            quote! { #ident: Slot<#tuple, #weight> }
         })
         .collect();
 
@@ -222,12 +232,8 @@ fn gen_new_body(
         .iter()
         .map(|rel| {
             let ident = slots_ident(rel);
-            let batches = batches_type(rel);
-            quote! {
-                let #ident = Arc::new(::std::sync::Mutex::new(Arc::new(
-                    <#batches>::new(),
-                )));
-            }
+            let (tuple, weight) = slot_params(rel);
+            quote! { let #ident = Slot::<#tuple, #weight>::default(); }
         })
         .collect();
 
@@ -734,13 +740,12 @@ fn static_check(rel: &Relation) -> TokenStream {
     }
 }
 
-/// The staged batches of non-nullary `rel`, each with the weight its rows
-/// load at: `diff::Static` for a static relation, which only inserts, else
-/// the signed weight of the call that staged them.
-fn batches_type(rel: &Relation) -> TokenStream {
-    let tuple_ty = user_tuple_tokens(&rel.data_type());
+/// Returns `rel`'s row tuple and load weight, the type arguments of its
+/// `Batches` and `Slot`.
+fn slot_params(rel: &Relation) -> (TokenStream, TokenStream) {
+    let tuple = user_tuple_tokens(&rel.data_type());
     let weight = weight_tokens(rel.input_mutability());
-    quote! { Vec<(Vec<#tuple_ty>, #weight)> }
+    (tuple, weight)
 }
 
 // =========================================================================
