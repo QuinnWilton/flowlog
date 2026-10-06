@@ -391,6 +391,113 @@ impl Transformation {
         }
     }
 
+    /// This transformation with its keyed output held as rows, the key
+    /// columns first, under the same fingerprint. A row output is
+    /// returned as it is.
+    pub(crate) fn with_row_output(&self) -> Self {
+        let rows = |output: &Arc<Collection>| Arc::new(output.with_row_layout());
+        match self {
+            Self::RowToKv {
+                input,
+                output,
+                flow,
+            } => Self::RowToRow {
+                input: Arc::clone(input),
+                output: rows(output),
+                flow: flow.with_row_output(),
+            },
+            Self::KvToKv {
+                input,
+                output,
+                flow,
+            } => Self::KvToRow {
+                input: Arc::clone(input),
+                output: rows(output),
+                flow: flow.with_row_output(),
+            },
+            Self::JnToKv {
+                input,
+                output,
+                flow,
+            } => Self::JnToRow {
+                input: input.clone(),
+                output: rows(output),
+                flow: flow.with_row_output(),
+            },
+            Self::NJnToKv {
+                input,
+                output,
+                flow,
+            } => Self::NJnToRow {
+                input: input.clone(),
+                output: rows(output),
+                flow: flow.with_row_output(),
+            },
+            Self::RowToRow { .. }
+            | Self::KvToRow { .. }
+            | Self::JnToRow { .. }
+            | Self::NJnToRow { .. } => self.clone(),
+        }
+    }
+
+    /// Makes this transformation, if it reads the collection `rows` holds
+    /// as rows, read `rows` in place of the keyed pairs it read, finding
+    /// each column where the rows put it (see
+    /// [`TransformationFlow::reading_rows`]). `key_count` is the key width
+    /// the pairs had. A reader of any other collection is unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an internal error if this is a join or antijoin over the
+    /// collection: a join reads arranged pairs, never rows.
+    pub(crate) fn read_as_rows(
+        &mut self,
+        rows: &Arc<Collection>,
+        key_count: usize,
+    ) -> Result<(), PlanError> {
+        let fp = rows.fingerprint();
+        let replacement = match self {
+            Self::KvToRow {
+                input,
+                output,
+                flow,
+            } if input.fingerprint() == fp => Self::RowToRow {
+                input: Arc::clone(rows),
+                output: Arc::clone(output),
+                flow: flow.reading_rows(key_count),
+            },
+            Self::KvToKv {
+                input,
+                output,
+                flow,
+            } if input.fingerprint() == fp => Self::RowToKv {
+                input: Arc::clone(rows),
+                output: Arc::clone(output),
+                flow: flow.reading_rows(key_count),
+            },
+            Self::JnToRow { input, output, .. }
+            | Self::JnToKv { input, output, .. }
+            | Self::NJnToRow { input, output, .. }
+            | Self::NJnToKv { input, output, .. }
+                if input.0.fingerprint() == fp || input.1.fingerprint() == fp =>
+            {
+                return Err(PlanError::internal(format!(
+                    "{output} joins on {rows}, which is held as rows"
+                )));
+            }
+            Self::RowToRow { .. }
+            | Self::RowToKv { .. }
+            | Self::KvToRow { .. }
+            | Self::KvToKv { .. }
+            | Self::JnToRow { .. }
+            | Self::JnToKv { .. }
+            | Self::NJnToRow { .. }
+            | Self::NJnToKv { .. } => return Ok(()),
+        };
+        *self = replacement;
+        Ok(())
+    }
+
     /// The collection an info reads under `layout`, its own view of the
     /// columns: the producer's form and mutability when `produced` knows
     /// `fp`, else the form of the relation named `name` read as rows, with
@@ -461,6 +568,9 @@ mod tests {
     use crate::catalog::AtomSignature;
     use crate::catalog::JoinPredicates;
     use crate::catalog::KvPredicates;
+    use crate::planner::ArithmeticArgument;
+    use crate::planner::FactorArgument;
+    use crate::planner::TransformationArgument;
 
     fn column(atom: usize, argument: usize) -> ArithmeticPos {
         ArithmeticPos::from_var_signature(AtomArgumentSignature::new(
@@ -624,5 +734,105 @@ mod tests {
             matches!(&err, PlanError::Internal(_)) && err.to_string().contains("`x`"),
             "got {err}"
         );
+    }
+
+    /// A plain read of slot `index` on the key (`true`) or value side.
+    fn slot(is_key: bool, index: usize) -> ArithmeticArgument {
+        ArithmeticArgument {
+            init: FactorArgument::Var(TransformationArgument::KV((is_key, index))),
+            rest: vec![],
+        }
+    }
+
+    /// Arranges `s` by its first column with the second as the value, and
+    /// flattens the pairs back to `(second, first)` rows.
+    fn arranged_then_flattened() -> (Transformation, Transformation) {
+        let mut produced = HashMap::new();
+        let arranged = TransformationInfo::kv_to_kv(
+            compute_fp("s"),
+            "s".into(),
+            "arranged s".into(),
+            true,
+            layout(&[], &[column(0, 0), column(0, 1)]),
+            layout(&[column(0, 0)], &[column(0, 1)]),
+            KvPredicates::default(),
+        );
+        let arranged =
+            Transformation::from_info(&arranged, &mut produced, &mutability_of).expect("arranges");
+        let mut flat = TransformationInfo::kv_to_kv(
+            arranged.output().fingerprint(),
+            "arranged s".into(),
+            "flat".into(),
+            false,
+            layout(&[column(0, 0)], &[column(0, 1)]),
+            layout(&[], &[column(0, 1), column(0, 0)]),
+            KvPredicates::default(),
+        );
+        flat.update_row_output(true);
+        flat.refresh_output_fp();
+        let flat =
+            Transformation::from_info(&flat, &mut produced, &mutability_of).expect("flattens");
+        (arranged, flat)
+    }
+
+    /// Held as rows, the arrangement lists its columns keys first under the
+    /// same fingerprint, and the flatten finds each column where that puts
+    /// it: the value at 1, the key at 0.
+    #[test]
+    fn a_keyed_output_held_as_rows_is_read_at_its_flattened_columns() {
+        let (arranged, mut flat) = arranged_then_flattened();
+        assert!(matches!(flat, Transformation::KvToRow { .. }));
+        assert_eq!(**flat.flow().value(), vec![slot(false, 0), slot(true, 0)]);
+
+        let rows = arranged.with_row_output();
+        assert!(matches!(rows, Transformation::RowToRow { .. }));
+        assert_eq!(rows.output().fingerprint(), arranged.output().fingerprint());
+        assert_eq!(rows.output().arity(), (0, 2));
+        assert_eq!(**rows.flow().value(), vec![slot(false, 0), slot(false, 1)]);
+
+        flat.read_as_rows(rows.output(), 1).expect("reads rows");
+        assert!(matches!(flat, Transformation::RowToRow { .. }));
+        assert_eq!(flat.unary_input().arity(), (0, 2));
+        assert_eq!(**flat.flow().value(), vec![slot(false, 1), slot(false, 0)]);
+    }
+
+    /// A reader of some other collection keeps its shape and flow.
+    #[test]
+    fn a_reader_of_another_collection_is_unchanged_by_rows() {
+        let (_, mut flat) = arranged_then_flattened();
+        let mut produced = HashMap::new();
+        let other = arranged("t", false, &mut produced);
+        let before = flat.clone();
+
+        flat.read_as_rows(&Arc::new(other.with_row_layout()), 1)
+            .expect("reads nothing of it");
+        assert_eq!(flat, before);
+    }
+
+    /// A join reads arranged pairs, so holding one of its inputs as rows
+    /// is an internal error.
+    #[test]
+    fn a_join_over_a_collection_held_as_rows_is_an_internal_error() {
+        let mut produced = HashMap::new();
+        let left = arranged("s", false, &mut produced);
+        let right = arranged("t", false, &mut produced);
+        let info = TransformationInfo::join_to_kv(
+            left.fingerprint(),
+            "left".into(),
+            right.fingerprint(),
+            "right".into(),
+            "out".into(),
+            layout(&[column(0, 0)], &[column(0, 1)]),
+            layout(&[column(1, 0)], &[column(1, 1)]),
+            layout(&[column(0, 0)], &[column(0, 1), column(1, 1)]),
+            JoinPredicates::default(),
+        );
+        let mut join =
+            Transformation::from_info(&info, &mut produced, &mutability_of).expect("joins");
+
+        let err = join
+            .read_as_rows(&Arc::new(right.with_row_layout()), 1)
+            .expect_err("a join reads arrangements");
+        assert!(matches!(err, PlanError::Internal(_)), "got {err}");
     }
 }

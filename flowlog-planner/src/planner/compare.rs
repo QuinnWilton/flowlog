@@ -55,6 +55,19 @@ impl ComparisonExprArgument {
     pub fn right(&self) -> &ArithmeticArgument {
         &self.right
     }
+
+    /// This comparison with every slot on either side replaced by what
+    /// `slot` returns for it.
+    pub(crate) fn map_slots(
+        &self,
+        slot: &impl Fn(TransformationArgument) -> TransformationArgument,
+    ) -> Self {
+        Self {
+            left: self.left.map_slots(slot),
+            operator: self.operator.clone(),
+            right: self.right.map_slots(slot),
+        }
+    }
 }
 
 impl fmt::Display for ComparisonExprArgument {

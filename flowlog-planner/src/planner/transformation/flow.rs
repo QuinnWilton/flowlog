@@ -202,6 +202,80 @@ impl TransformationFlow {
 }
 
 // ========================
+// Reshaping
+// ========================
+impl TransformationFlow {
+    /// This flow with its output held as rows: the key columns first, then
+    /// the value columns, and no key.
+    pub(crate) fn with_row_output(&self) -> Self {
+        let row = |key: &[ArithmeticArgument], value: &[ArithmeticArgument]| {
+            Arc::new(key.iter().chain(value).cloned().collect())
+        };
+        match self {
+            Self::KVToKV {
+                key,
+                value,
+                constraints,
+                compares,
+            } => Self::KVToKV {
+                key: Arc::new(Vec::new()),
+                value: row(key, value),
+                constraints: constraints.clone(),
+                compares: compares.clone(),
+            },
+            Self::JnToKV {
+                key,
+                value,
+                compares,
+            } => Self::JnToKV {
+                key: Arc::new(Vec::new()),
+                value: row(key, value),
+                compares: compares.clone(),
+            },
+        }
+    }
+
+    /// This flow reading its key-value input held as rows, keys first:
+    /// key column `i` is read at row column `i` and value column `j` at
+    /// row column `key_count + j`.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a `JnToKV` flow, which reads two inputs.
+    pub(crate) fn reading_rows(&self, key_count: usize) -> Self {
+        let Self::KVToKV {
+            key,
+            value,
+            constraints,
+            compares,
+        } = self
+        else {
+            panic!("Planner error: TransformationFlow::reading_rows reads one input");
+        };
+        let slot = |argument: TransformationArgument| match argument {
+            TransformationArgument::KV((true, index)) => TransformationArgument::KV((false, index)),
+            TransformationArgument::KV((false, index)) => {
+                TransformationArgument::KV((false, key_count + index))
+            }
+            // A flow over one input holds no join slot.
+            TransformationArgument::Jn(_) => argument,
+        };
+        let exprs = |exprs: &[ArithmeticArgument]| {
+            Arc::new(exprs.iter().map(|expr| expr.map_slots(&slot)).collect())
+        };
+        Self::KVToKV {
+            key: exprs(key),
+            value: exprs(value),
+            constraints: constraints.map_slots(&slot),
+            compares: compares
+                .iter()
+                .map(|compare| compare.map_slots(&slot))
+                .collect(),
+        }
+    }
+}
+
+// ========================
 // Private Helper Methods
 // ========================
 impl TransformationFlow {

@@ -101,6 +101,37 @@ impl FactorArgument {
             Self::TupleProj { tuple, .. } => tuple.transformation_arguments(),
         }
     }
+
+    /// This factor with every slot replaced by what `slot` returns for it,
+    /// nested arguments included.
+    pub(crate) fn map_slots(
+        &self,
+        slot: &impl Fn(TransformationArgument) -> TransformationArgument,
+    ) -> Self {
+        let args = |args: &[ArithmeticArgument]| -> Vec<ArithmeticArgument> {
+            args.iter().map(|arg| arg.map_slots(slot)).collect()
+        };
+        match self {
+            Self::Var(argument) => Self::Var(slot(*argument)),
+            Self::Const(constant) => Self::Const(constant.clone()),
+            Self::FnCall { name, args: inner } => Self::FnCall {
+                name: name.clone(),
+                args: args(inner),
+            },
+            Self::Builtin { op, args: inner } => Self::Builtin {
+                op: *op,
+                args: args(inner),
+            },
+            Self::Group(inner) => Self::Group(Box::new(inner.map_slots(slot))),
+            Self::Tuple { fields } => Self::Tuple {
+                fields: args(fields),
+            },
+            Self::TupleProj { tuple, index } => Self::TupleProj {
+                tuple: Box::new(tuple.map_slots(slot)),
+                index: *index,
+            },
+        }
+    }
 }
 
 impl fmt::Display for FactorArgument {
@@ -186,6 +217,22 @@ impl ArithmeticArgument {
             args.extend(factor.transformation_arguments());
         }
         args
+    }
+
+    /// This expression with every slot replaced by what `slot` returns for
+    /// it.
+    pub(crate) fn map_slots(
+        &self,
+        slot: &impl Fn(TransformationArgument) -> TransformationArgument,
+    ) -> Self {
+        Self {
+            init: self.init.map_slots(slot),
+            rest: self
+                .rest
+                .iter()
+                .map(|(op, factor)| (op.clone(), factor.map_slots(slot)))
+                .collect(),
+        }
     }
 }
 

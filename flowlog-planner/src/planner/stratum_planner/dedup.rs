@@ -7,8 +7,8 @@
 //! then takes each set of collections that hold the same rows, largest
 //! bodies first, and picks which of them to compute so that every one the
 //! rest of the plan needs is computed or a map over a computed one, with
-//! the fewest joins. `drop_unread` and `sort_producers_first` tidy the
-//! result.
+//! the fewest joins. `drop_unread` and `drop_unread_arrangements` tidy
+//! the result, and `sort_producers_first` orders it.
 //!
 //! The preludes of earlier strata take part as collections computed
 //! already: they may serve this stratum's collections but are never
@@ -61,6 +61,7 @@ impl StratumPlanner {
         self.merge_equal(preludes);
         self.cover_bodies(preludes);
         self.drop_unread();
+        self.drop_unread_arrangements()?;
         self.sort_producers_first()
     }
 
@@ -427,6 +428,41 @@ impl StratumPlanner {
         }
     }
 
+    /// Holds as rows every keyed collection no join or antijoin reads, and
+    /// lets the maps reading it read the rows. `cover_bodies` can replace
+    /// the one join reading a keyed collection by a map over it, and the
+    /// arrangement would then be built and maintained for no reader. A
+    /// later stratum that needs the collection keyed arranges the rows,
+    /// as it does any prelude.
+    ///
+    /// # Errors
+    ///
+    /// Returns an internal error if a join reads a collection this holds
+    /// as rows, which cannot happen: only collections no join reads change.
+    fn drop_unread_arrangements(&mut self) -> Result<(), PlanError> {
+        let joined: HashSet<u64> = self
+            .transformations
+            .iter()
+            .filter(|tx| !tx.is_unary())
+            .flat_map(Transformation::input_fingerprints)
+            .collect();
+        for index in 0..self.transformations.len() {
+            let tx = &self.transformations[index];
+            if !tx.need_arrange() || joined.contains(&tx.output().fingerprint()) {
+                continue;
+            }
+            trace!("[dedup] {} is read by maps only, now rows", tx.output());
+            let key_count = tx.output().arity().0;
+            let rows = tx.with_row_output();
+            let output = Arc::clone(rows.output());
+            self.transformations[index] = rows;
+            for reader in &mut self.transformations {
+                reader.read_as_rows(&output, key_count)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Reorders the transformations so that every input is produced before
     /// it is read, keeping the current relative order otherwise. An input
     /// no transformation here produces is available from the start.
@@ -540,14 +576,24 @@ fn greedy_cover(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::collections::HashSet;
 
     use flowlog_common::compute_fp;
+    use flowlog_parser::Mutability;
 
+    use crate::catalog::ArithmeticPos;
+    use crate::catalog::AtomArgumentSignature;
+    use crate::catalog::AtomSignature;
+    use crate::catalog::JoinPredicates;
+    use crate::catalog::KvPredicates;
     use crate::planner::ArithmeticArgument;
     use crate::planner::FactorArgument;
+    use crate::planner::KeyValueLayout;
     use crate::planner::StratumPlanner;
+    use crate::planner::Transformation;
     use crate::planner::TransformationArgument;
+    use crate::planner::TransformationInfo;
     use crate::test_harness::program_planner;
 
     const WIDE_NARROW: &str = "\
@@ -1018,5 +1064,125 @@ mod tests {
         };
         assert_eq!(**swapped.flow().value(), vec![column(1), column(0)]);
         assert!(producers_precede_readers(stratum));
+    }
+
+    /// Column `argument` of the rhs atom `atom`, as a layout position.
+    fn arg(atom: usize, argument: usize) -> ArithmeticPos {
+        ArithmeticPos::from_var_signature(AtomArgumentSignature::new(
+            AtomSignature::new(true, atom),
+            argument,
+        ))
+    }
+
+    fn layout(key: &[ArithmeticPos], value: &[ArithmeticPos]) -> KeyValueLayout {
+        KeyValueLayout::new(key.to_vec(), value.to_vec())
+    }
+
+    /// A plain read of one slot.
+    fn read(slot: TransformationArgument) -> ArithmeticArgument {
+        ArithmeticArgument {
+            init: FactorArgument::Var(slot),
+            rest: vec![],
+        }
+    }
+
+    /// `s` arranged by its first column, semijoined with `t` into a keyed
+    /// output that only the head's flatten reads, as `cover_bodies` leaves
+    /// a semijoin whose one join became a map. The semijoin is then held
+    /// as rows under its fingerprint, keys first, and the flatten reads
+    /// the same columns at their row positions.
+    #[test]
+    fn a_keyed_output_no_join_reads_is_held_as_rows() {
+        let statics = |fp| {
+            ["s", "t"]
+                .iter()
+                .any(|name| compute_fp(name) == fp)
+                .then_some(Mutability::Static)
+        };
+        let mut produced = HashMap::new();
+        let mut materialize = |info: &TransformationInfo| {
+            Transformation::from_info(info, &mut produced, &statics).expect("materializes")
+        };
+        let s = materialize(&TransformationInfo::kv_to_kv(
+            compute_fp("s"),
+            "s".into(),
+            "arranged s".into(),
+            true,
+            layout(&[], &[arg(0, 0), arg(0, 1)]),
+            layout(&[arg(0, 0)], &[arg(0, 1)]),
+            KvPredicates::default(),
+        ));
+        let t = materialize(&TransformationInfo::kv_to_kv(
+            compute_fp("t"),
+            "t".into(),
+            "arranged t".into(),
+            true,
+            layout(&[], &[arg(0, 0)]),
+            layout(&[arg(0, 0)], &[]),
+            KvPredicates::default(),
+        ));
+        let semijoin = materialize(&TransformationInfo::join_to_kv(
+            t.output().fingerprint(),
+            "arranged t".into(),
+            s.output().fingerprint(),
+            "arranged s".into(),
+            "t semijoin s".into(),
+            layout(&[arg(0, 0)], &[]),
+            layout(&[arg(1, 0)], &[arg(1, 1)]),
+            layout(&[arg(1, 0)], &[arg(1, 1)]),
+            JoinPredicates::default(),
+        ));
+        let mut flatten = TransformationInfo::kv_to_kv(
+            semijoin.output().fingerprint(),
+            "t semijoin s".into(),
+            "out".into(),
+            false,
+            layout(&[arg(0, 0)], &[arg(0, 1)]),
+            layout(&[], &[arg(0, 1), arg(0, 0)]),
+            KvPredicates::default(),
+        );
+        flatten.update_row_output(true);
+        flatten.refresh_output_fp();
+        let head = materialize(&flatten);
+        let head_fp = head.output().fingerprint();
+        let mut stratum = StratumPlanner {
+            transformations: vec![s, t, semijoin, head],
+            idb_to_heads_map: HashMap::from([(compute_fp("out"), vec![head_fp])]),
+            ..Default::default()
+        };
+
+        stratum
+            .drop_unread_arrangements()
+            .expect("holds the semijoin as rows");
+
+        let [s, t, semijoin, head] = &stratum.transformations[..] else {
+            panic!("the four transformations stay");
+        };
+        assert!(
+            s.need_arrange() && t.need_arrange(),
+            "the semijoin still reads both arrangements"
+        );
+        assert!(matches!(semijoin, Transformation::JnToRow { .. }));
+        assert_eq!(semijoin.output().arity(), (0, 2));
+        assert_eq!(
+            **semijoin.flow().value(),
+            vec![
+                read(TransformationArgument::Jn((false, true, 0))),
+                read(TransformationArgument::Jn((false, false, 0))),
+            ]
+        );
+        assert!(matches!(head, Transformation::RowToRow { .. }));
+        assert_eq!(
+            head.unary_input().fingerprint(),
+            semijoin.output().fingerprint()
+        );
+        assert_eq!(head.unary_input().arity(), (0, 2));
+        assert_eq!(
+            **head.flow().value(),
+            vec![
+                read(TransformationArgument::KV((false, 1))),
+                read(TransformationArgument::KV((false, 0))),
+            ]
+        );
     }
 }
