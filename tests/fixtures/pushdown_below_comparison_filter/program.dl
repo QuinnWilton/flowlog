@@ -1,0 +1,53 @@
+// ════════════════════════════════════════════════════════════════════════════
+// Suite   : pushdown_below_comparison_filter
+// Feature : a negation pushed down a path through a map that holds a
+//           comparison (`api = "start"`, from a disjunction)
+// Covers  : the antijoin copy lands on the map's own edge, after its filter,
+//           so comparisons still run before every antijoin, instead of below
+//           it, where fuse failed with "impossible fusion of map with neg join
+//           producer" (found in argus's rules)
+// ════════════════════════════════════════════════════════════════════════════
+
+.decl function_def(func: symbol, mod: symbol, name: symbol, arity: number, exported: number)
+.decl name_lookup(id: symbol, func: symbol, api: symbol, scope: symbol, source: symbol, key: symbol, checked: symbol)
+.comp CheckThenAct {
+  .decl meets(f: symbol, c: symbol, a: symbol, rs: symbol, r: symbol, ks: symbol, k: symbol)
+}
+.init names = CheckThenAct
+.decl lookup_then_claim_race(func: symbol, lookup: symbol, claim: symbol, name: ProcessName)
+lookup_then_claim_race(func, lookup, claim, name) :- decides_claim(func, lookup, claim, name), !loser_dropped(func, claim).
+.type ProcessName = (key_source: symbol, key: symbol)
+.decl decides_claim(func: symbol, lookup: symbol, claim: symbol, name: ProcessName)
+.decl name_act(act: symbol, func: symbol, api: symbol)
+.decl act_callee(act: symbol, callee: symbol)
+.decl loser_dropped(meet: symbol, act: symbol)
+loser_dropped(f, a) :- names.meets(f, _, a, _, _, _, _), name_act(a, _, api), (api = "start" ; api = "start_link" ; api = "start_via"), act_callee(a, callee), !returned_and_used(a).
+.decl returned_and_used(act: symbol)
+.decl registry_race(mod: symbol, func: symbol, lookup_api: symbol, create_api: symbol, key_source: symbol, key: symbol, check: symbol, act: symbol)
+.output registry_race
+registry_race(mod, func, lookup_api, create_api, key_source, key, lookup, claim) :-
+  lookup_then_claim_race(func, lookup, claim, arg_1), arg_1 = (key_source, key),
+  name_lookup(lookup, _, lookup_api, _, _, _, _),
+  name_act(claim, _, create_api),
+  function_def(func, mod, _, _, _).
+.decl function_def_in(func: symbol, mod: symbol, name: symbol, arity: number, exported: number)
+.input function_def_in(IO="file", filename="function_def.csv", delimiter=",")
+function_def(func, mod, name, arity, exported) :- function_def_in(func, mod, name, arity, exported).
+.decl name_lookup_in(id: symbol, func: symbol, api: symbol, scope: symbol, source: symbol, key: symbol, checked: symbol)
+.input name_lookup_in(IO="file", filename="name_lookup.csv", delimiter=",")
+name_lookup(id, func, api, scope, source, key, checked) :- name_lookup_in(id, func, api, scope, source, key, checked).
+.decl decides_claim_in(func: symbol, lookup: symbol, claim: symbol, key_source: symbol, key: symbol)
+.input decides_claim_in(IO="file", filename="decides_claim.csv", delimiter=",")
+decides_claim(f, l, c, (ks, k)) :- decides_claim_in(f, l, c, ks, k).
+.decl name_act_in(act: symbol, func: symbol, api: symbol)
+.input name_act_in(IO="file", filename="name_act.csv", delimiter=",")
+name_act(act, func, api) :- name_act_in(act, func, api).
+.decl act_callee_in(act: symbol, callee: symbol)
+.input act_callee_in(IO="file", filename="act_callee.csv", delimiter=",")
+act_callee(act, callee) :- act_callee_in(act, callee).
+.decl returned_and_used_in(act: symbol)
+.input returned_and_used_in(IO="file", filename="returned_and_used.csv", delimiter=",")
+returned_and_used(act) :- returned_and_used_in(act).
+.decl meets_in(f: symbol, c: symbol, a: symbol, rs: symbol, r: symbol, ks: symbol, k: symbol)
+.input meets_in(IO="file", filename="meets.csv", delimiter=",")
+names.meets(f, c, a, rs, r, ks, k) :- meets_in(f, c, a, rs, r, ks, k).

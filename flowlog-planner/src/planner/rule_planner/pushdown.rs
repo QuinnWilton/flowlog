@@ -316,7 +316,17 @@ impl RulePlanner {
         // redundant. The negated side of an antijoin is left out on
         // purpose. A semijoin is a join whose left input contributes keys
         // only; its right input is the retained one.
+        //
+        // A map that filters (comparisons, constant or column equalities)
+        // is a deepest node: a copy below it would put a join under its
+        // filter, where fuse cannot fold the filter in (a join holds no
+        // equalities, an antijoin no predicate at all), and comparisons
+        // must run before an antijoin. A copy on the map's own edge sees
+        // the rows the filter kept.
         let (sides, binary): (Vec<(Side, bool)>, bool) = match &self.transformation_infos[index] {
+            TransformationInfo::KVToKV { predicates, .. } if !predicates.is_empty() => {
+                (Vec::new(), false)
+            }
             TransformationInfo::KVToKV { .. } => (vec![(Side::Left, true)], false),
             TransformationInfo::JoinToKV {
                 left_input_kv_layout,

@@ -1,0 +1,65 @@
+// ════════════════════════════════════════════════════════════════════════════
+// Suite   : pushdown_below_equality_filter
+// Feature : a semijoin filter pushed down a path through a map that holds a
+//           constant equality (`call_arg_forward(h, g, 0, 0)`)
+// Covers  : the copy lands on the map's own edge, after its filter, instead of
+//           below it, where fuse could not fold the equality into the copy's
+//           join and failed in update_const_eq_and_var_eq_constraints (found
+//           in argus's rules)
+// ════════════════════════════════════════════════════════════════════════════
+
+.decl fun_handed(id: symbol, caller: symbol, callee: symbol, pos: number)
+.decl function_def(func: symbol, mod: symbol, name: symbol, arity: number, exported: number)
+.decl call_arg_forward(caller: symbol, callee: symbol, arg_pos: number, fwd_pos: number)
+.decl clause_call(id: symbol, func: symbol, tag: symbol)
+.decl supervisor_site(mod: symbol, site: symbol)
+.decl call_instr(func: symbol, callee: symbol, id: symbol)
+.decl clause_fn(mod: symbol, func: symbol, kind: symbol)
+clause_fn(m, g, k) :- hands_on(m, _, g, _, k).
+.decl hands_on(mod: symbol, func: symbol, callee: symbol, site: symbol, kind: symbol)
+hands_on(m, h, g, c, k) :- clause_fn(m, h, k), call_instr(h, g, c), call_arg_forward(h, g, 0, 0), function_def(g, _, n, a, _).
+.decl clause_node(mod: symbol, func: symbol, kind: symbol, tag: symbol)
+clause_node(m, h, "internal", ":internal") :- clause_fn(m, h, "internal").
+.decl start_clause(mod: symbol, func: symbol, tag: symbol)
+start_clause(m, h, t) :- clause_node(m, h, "continue", t).
+.decl once_phase_site(mod: symbol, func: symbol, site: symbol)
+once_phase_site(m, h, s) :- start_clause(m, h, t), clause_call(s, h, t).
+.decl once_step(mod: symbol, func: symbol, site: symbol, callee: symbol)
+once_step(m, h, c, g) :- once_phase_site(m, h, c), fun_handed(c, h, g, _).
+.decl holds_in(a: symbol, b: symbol, func: symbol, tag: symbol, how: symbol, store: symbol)
+.decl step_site(caller: symbol, keeper: symbol, site: symbol, how: symbol, store: symbol)
+step_site(caller, keeper, step, how, store) :- holds_in(caller, keeper, func, _, how, store), once_step(caller, _, step, callee).
+.decl holds_site(caller: symbol, keeper: symbol, site: symbol, how: symbol, store: symbol)
+holds_site(caller, keeper, site, how, store) :- step_site(caller, keeper, site, how, store).
+.decl sibling_dependency(sup: symbol, caller: symbol, callee: symbol, reason: symbol, detail: symbol, sup_site: symbol, witness: symbol, site: symbol, basis: symbol, permille: number)
+.output sibling_dependency
+sibling_dependency(sup, caller, keeper, "restart_isolation", how, sup_site, store, site, basis, 0) :- supervisor_site(sup, sup_site), holds_site(caller, keeper, site, how, store), keeping_basis(how, basis).
+.decl keeping_basis(how: symbol, basis: symbol)
+.decl fun_handed_in(id: symbol, caller: symbol, callee: symbol, pos: number)
+.input fun_handed_in(IO="file", filename="fun_handed.csv", delimiter=",")
+fun_handed(id, caller, callee, pos) :- fun_handed_in(id, caller, callee, pos).
+.decl function_def_in(func: symbol, mod: symbol, name: symbol, arity: number, exported: number)
+.input function_def_in(IO="file", filename="function_def.csv", delimiter=",")
+function_def(func, mod, name, arity, exported) :- function_def_in(func, mod, name, arity, exported).
+.decl call_arg_forward_in(caller: symbol, callee: symbol, arg_pos: number, fwd_pos: number)
+.input call_arg_forward_in(IO="file", filename="call_arg_forward.csv", delimiter=",")
+call_arg_forward(caller, callee, arg_pos, fwd_pos) :- call_arg_forward_in(caller, callee, arg_pos, fwd_pos).
+.decl clause_call_in(id: symbol, func: symbol, tag: symbol)
+.input clause_call_in(IO="file", filename="clause_call.csv", delimiter=",")
+clause_call(id, func, tag) :- clause_call_in(id, func, tag).
+.decl supervisor_site_in(mod: symbol, site: symbol)
+.input supervisor_site_in(IO="file", filename="supervisor_site.csv", delimiter=",")
+supervisor_site(mod, site) :- supervisor_site_in(mod, site).
+.decl call_instr_in(func: symbol, callee: symbol, id: symbol)
+.input call_instr_in(IO="file", filename="call_instr.csv", delimiter=",")
+call_instr(func, callee, id) :- call_instr_in(func, callee, id).
+.decl holds_in_in(a: symbol, b: symbol, func: symbol, tag: symbol, how: symbol, store: symbol)
+.input holds_in_in(IO="file", filename="holds_in.csv", delimiter=",")
+holds_in(a, b, func, tag, how, store) :- holds_in_in(a, b, func, tag, how, store).
+.decl keeping_basis_in(how: symbol, basis: symbol)
+.input keeping_basis_in(IO="file", filename="keeping_basis.csv", delimiter=",")
+keeping_basis(how, basis) :- keeping_basis_in(how, basis).
+.decl clause_seed(mod: symbol, func: symbol, kind: symbol)
+.input clause_seed(IO="file", filename="clause_seed.csv", delimiter=",")
+clause_fn(m, g, k) :- clause_seed(m, g, k).
+clause_node(m, h, "continue", ":continue") :- clause_fn(m, h, "continue").
