@@ -5,6 +5,7 @@
 //! [`expr`](crate::expr).
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 use flowlog_planner::planner::ArithmeticArgument;
 use flowlog_planner::planner::Collection;
@@ -264,7 +265,13 @@ impl Codegen {
                         );
                     }
                 };
-                let arrange_stmt = register_arrangement(arranged_map, output, &out, &arrange_name);
+                let arrange_stmt = register_arrangement(
+                    arranged_map,
+                    &self.arranged_reads,
+                    output,
+                    &out,
+                    &arrange_name,
+                );
                 Ok(quote! {
                     #transformation
                     #arrange_stmt
@@ -335,7 +342,13 @@ impl Codegen {
 
                 let closure_param = kv_closure_param(input, flow);
                 let body = flat_map_body_tokens(pred, out_expr);
-                let arrange_stmt = register_arrangement(arranged_map, output, &out, &arrange_name);
+                let arrange_stmt = register_arrangement(
+                    arranged_map,
+                    &self.arranged_reads,
+                    output,
+                    &out,
+                    &arrange_name,
+                );
                 Ok(quote! {
                     let #out = ::flowlog_runtime::operators::flowlog_map(
                         #inp.clone(),
@@ -411,7 +424,13 @@ impl Codegen {
                     self.join_compare_predicate(flow.compares(), si, &left_type, &right_type)?;
                 let join_body = join_body_tokens(cmp_pred, out_expr);
 
-                let arrange_stmt = register_arrangement(arranged_map, output, &out, &arrange_name);
+                let arrange_stmt = register_arrangement(
+                    arranged_map,
+                    &self.arranged_reads,
+                    output,
+                    &out,
+                    &arrange_name,
+                );
                 Ok(quote! {
                     let #out = ::flowlog_runtime::operators::flowlog_join(
                         #l.clone(),
@@ -493,7 +512,13 @@ impl Codegen {
                     self.kv_projection(flow.key(), si, &input_type)?,
                     self.kv_projection(flow.value(), si, &input_type)?,
                 );
-                let arrange_stmt = register_arrangement(arranged_map, output, &out, &arrange_name);
+                let arrange_stmt = register_arrangement(
+                    arranged_map,
+                    &self.arranged_reads,
+                    output,
+                    &out,
+                    &arrange_name,
+                );
                 Ok(quote! {
                     let #out = ::flowlog_runtime::operators::flowlog_antijoin(
                         #l.clone(),
@@ -514,13 +539,19 @@ impl Codegen {
 
 /// Returns the statement arranging `output`, bound as `<collection>_arr`
 /// under `name`: by itself when it is key-only, else by key. Records the
-/// arrangement in `arranged_map` for the joins that read it.
+/// arrangement in `arranged_map` for the joins that read it. An output no
+/// join reads (`arranged_reads`) is not arranged: its readers are maps,
+/// which read the collection itself.
 fn register_arrangement(
     arranged_map: &mut HashMap<u64, Ident>,
+    arranged_reads: &HashSet<u64>,
     output: &Collection,
     collection: &Ident,
     name: &str,
 ) -> TokenStream {
+    if !arranged_reads.contains(&output.fingerprint()) {
+        return TokenStream::new();
+    }
     let arrangement = format_ident!("{}_arr", collection);
     arranged_map.insert(output.fingerprint(), arrangement.clone());
     let arrange = if output.is_k_only() {

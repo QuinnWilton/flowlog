@@ -30,6 +30,7 @@ mod test_harness;
 mod ty;
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 pub use error::CodegenError;
 pub(crate) use expr::term::constant::const_to_token;
@@ -70,6 +71,13 @@ pub struct Codegen {
     /// earlier stratum's prelude. Reset at the start of every `generate`.
     pub(crate) outer_fp_to_arrangement: HashMap<u64, Ident>,
 
+    /// Fingerprints of the collections some join or antijoin reads, in any
+    /// stratum: the only outputs worth an arrangement. Deduplication can
+    /// serve a join's reader from another collection, leaving a keyed
+    /// output that only maps read. Computed at the start of every
+    /// `generate`.
+    pub(crate) arranged_reads: HashSet<u64>,
+
     /// Fingerprint -> mutability of each emitted collection and of each
     /// relation's current binding; a later stratum that rebinds a relation
     /// overwrites its entry. An entry only rises: a collection's never
@@ -86,6 +94,7 @@ impl Codegen {
             global_fp_to_ident: HashMap::new(),
             global_fp_to_type: HashMap::new(),
             outer_fp_to_arrangement: HashMap::new(),
+            arranged_reads: HashSet::new(),
             global_fp_to_mutability: HashMap::new(),
         }
     }
@@ -102,6 +111,21 @@ impl Codegen {
         self.seed_global_types();
         self.seed_global_idents();
         self.outer_fp_to_arrangement.clear();
+        self.arranged_reads = program_planner
+            .strata()
+            .iter()
+            .flat_map(|stratum| {
+                stratum
+                    .non_recursive_transformations()
+                    .iter()
+                    .chain(stratum.recursive_transformations())
+            })
+            .filter(|tx| !tx.is_unary())
+            .flat_map(|tx| {
+                let (left, right) = tx.binary_input();
+                [left.fingerprint(), right.fingerprint()]
+            })
+            .collect();
         self.global_fp_to_mutability = self
             .program
             .edbs()
