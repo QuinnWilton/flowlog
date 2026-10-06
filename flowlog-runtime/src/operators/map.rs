@@ -19,7 +19,7 @@ use crate::diff::Unit;
 pub fn flowlog_map<'scope, T, D, D2, R, R2, I, L>(
     collection: VecCollection<'scope, T, D, R>,
     name: &str,
-    mut logic: L,
+    logic: L,
 ) -> VecCollection<'scope, T, D2, R2>
 where
     T: Timestamp,
@@ -27,8 +27,32 @@ where
     D2: Clone + 'static,
     R: 'static,
     R2: Clone + 'static,
-    I: IntoIterator<Item = (D2, T, R2)>,
+    I: IntoIterator<Item = (D2, T, R2)> + 'static,
     L: FnMut(D, T, R) -> I + 'static,
+{
+    // Boxed, as `flowlog_join`'s result is: every map between the same
+    // types shares one operator instance.
+    map_boxed(collection, name, Box::new(logic))
+}
+
+/// A boxed update mapper, as `flowlog_map` erases its closure.
+type MapLogic<D, T, R, I> = Box<dyn FnMut(D, T, R) -> I + 'static>;
+
+/// A boxed update predicate, as `flowlog_filter` erases its closure.
+type FilterLogic<D, T, R> = Box<dyn FnMut(&D, &T, &R) -> bool + 'static>;
+
+fn map_boxed<'scope, T, D, D2, R, R2, I>(
+    collection: VecCollection<'scope, T, D, R>,
+    name: &str,
+    mut logic: MapLogic<D, T, R, I>,
+) -> VecCollection<'scope, T, D2, R2>
+where
+    T: Timestamp,
+    D: 'static,
+    D2: Clone + 'static,
+    R: 'static,
+    R2: Clone + 'static,
+    I: IntoIterator<Item = (D2, T, R2)> + 'static,
 {
     collection
         .inner
@@ -54,13 +78,26 @@ where
 pub fn flowlog_filter<'scope, T, D, R, L>(
     collection: VecCollection<'scope, T, D, R>,
     name: &str,
-    mut logic: L,
+    logic: L,
 ) -> VecCollection<'scope, T, D, R>
 where
     T: Timestamp,
     D: 'static,
     R: 'static,
     L: FnMut(&D, &T, &R) -> bool + 'static,
+{
+    filter_boxed(collection, name, Box::new(logic))
+}
+
+fn filter_boxed<'scope, T, D, R>(
+    collection: VecCollection<'scope, T, D, R>,
+    name: &str,
+    mut logic: FilterLogic<D, T, R>,
+) -> VecCollection<'scope, T, D, R>
+where
+    T: Timestamp,
+    D: 'static,
+    R: 'static,
 {
     collection
         .inner

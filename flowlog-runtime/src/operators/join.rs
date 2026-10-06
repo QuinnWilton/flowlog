@@ -50,7 +50,7 @@ pub fn flowlog_join<'scope, Tr1, Tr2, I, L, R1, R2, KC>(
     arranged1: Arranged<'scope, Tr1>,
     arranged2: Arranged<'scope, Tr2>,
     name: &str,
-    mut result: L,
+    result: L,
 ) -> VecCollection<'scope, Tr1::Time, I::Item, <R1 as Multiply<R2>>::Output>
 where
     Tr1: TraceReader<Batch: Navigable> + 'static,
@@ -61,8 +61,39 @@ where
     for<'a> BatchCursor<Tr1>: Cursor<Key<'a> = KC::ReadItem<'a>>,
     for<'a> BatchCursor<Tr2>: Cursor<Key<'a> = KC::ReadItem<'a>>,
     R1: Multiply<R2, Output: Semigroup + 'static> + Clone,
-    I: IntoIterator<Item: Data>,
+    I: IntoIterator<Item: Data> + 'static,
     L: FnMut(KC::ReadItem<'_>, BatchVal<'_, Tr1>, BatchVal<'_, Tr2>) -> I + 'static,
+{
+    // A generated program joins thousands of times, each with a closure
+    // type of its own. Boxed, every join over the same traces and output
+    // shares one instance of the join machinery, instead of compiling it
+    // once per join: the program compiles in a fraction of the time and
+    // memory, for one indirect call per output.
+    join_boxed::<Tr1, Tr2, I, R1, R2, KC>(arranged1, arranged2, name, Box::new(result))
+}
+
+/// A boxed join result, as `flowlog_join` erases its closure.
+type JoinResult<KC, Tr1, Tr2, I> = Box<
+    dyn FnMut(<KC as BatchContainer>::ReadItem<'_>, BatchVal<'_, Tr1>, BatchVal<'_, Tr2>) -> I
+        + 'static,
+>;
+
+fn join_boxed<'scope, Tr1, Tr2, I, R1, R2, KC>(
+    arranged1: Arranged<'scope, Tr1>,
+    arranged2: Arranged<'scope, Tr2>,
+    name: &str,
+    mut result: JoinResult<KC, Tr1, Tr2, I>,
+) -> VecCollection<'scope, Tr1::Time, I::Item, <R1 as Multiply<R2>>::Output>
+where
+    Tr1: TraceReader<Batch: Navigable> + 'static,
+    Tr2: TraceReader<Batch: Navigable, Time = Tr1::Time> + Clone + 'static,
+    BatchCursor<Tr1>: Cursor<Diff = R1, Time = Tr1::Time, KeyContainer = KC>,
+    BatchCursor<Tr2>: Cursor<Diff = R2, Time = Tr1::Time>,
+    KC: BatchContainer,
+    for<'a> BatchCursor<Tr1>: Cursor<Key<'a> = KC::ReadItem<'a>>,
+    for<'a> BatchCursor<Tr2>: Cursor<Key<'a> = KC::ReadItem<'a>>,
+    R1: Multiply<R2, Output: Semigroup + 'static> + Clone,
+    I: IntoIterator<Item: Data> + 'static,
 {
     // Recording the name waits on a differential-dataflow release whose
     // `join_traces` takes one; the pinned bump is parked in PR #281.
