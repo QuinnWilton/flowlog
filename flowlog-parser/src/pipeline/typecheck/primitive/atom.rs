@@ -18,6 +18,7 @@ pub(super) fn bind_atom(
     decls: &DeclTypes,
     bindings: &mut Bindings,
 ) -> Result<(), ParseError> {
+    check_arity(atom, decls)?;
     for (i, arg) in atom.arguments().iter().enumerate() {
         let col_ty = resolve_atom_column(atom, i, decls)?;
         match arg {
@@ -61,6 +62,7 @@ pub(super) fn check_atom(
     decls: &DeclTypes,
     bindings: &Bindings,
 ) -> Result<(), ParseError> {
+    check_arity(atom, decls)?;
     for (i, arg) in atom.arguments().iter().enumerate() {
         let col_ty = resolve_atom_column(atom, i, decls)?;
         match arg {
@@ -113,6 +115,24 @@ pub(super) fn pin_atom(atom: &mut Atom, decls: &DeclTypes) -> Result<(), ParseEr
     Ok(())
 }
 
+/// `AtomArity` unless `atom` names exactly as many columns as its `.decl`:
+/// a user's mistake, reported at the atom, whether it names too many
+/// columns or too few.
+fn check_arity(atom: &Atom, decls: &DeclTypes) -> Result<(), ParseError> {
+    let decl = decls
+        .get(atom.name())
+        .ok_or_else(|| grammar_bug(format!("atom `{}` not declared", atom.name())))?;
+    if decl.len() == atom.arguments().len() {
+        return Ok(());
+    }
+    Err(ParseError::AtomArity {
+        span: atom.span(),
+        rel: atom.name().to_string(),
+        expected: decl.len(),
+        found: atom.arguments().len(),
+    })
+}
+
 /// The declared type of `atom`'s column `i`; `grammar_bug` if the atom is
 /// undeclared or names more columns than its `.decl` has.
 fn resolve_atom_column(atom: &Atom, i: usize, decls: &DeclTypes) -> Result<DataType, ParseError> {
@@ -131,11 +151,32 @@ fn resolve_atom_column(atom: &Atom, i: usize, decls: &DeclTypes) -> Result<DataT
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::AtomArg;
     use crate::Constant;
     use crate::DataType;
+    use crate::ParseError;
     use crate::Predicate;
     use crate::test_harness::checked;
+
+    /// A body atom naming more or fewer columns than its `.decl`, positive
+    /// or negated, is the user's mistake, reported at the atom: not an
+    /// internal error.
+    #[rstest]
+    #[case("Out(x) :- A(x, y).", 2)]
+    #[case("Out(x) :- A(x), B(x, 1, 2).", 3)]
+    #[case("Out(x) :- A(x), !B(x).", 1)]
+    fn body_atom_arity_mismatch_is_a_user_error(#[case] rule: &str, #[case] found: usize) {
+        let src = format!(
+            ".decl A(x: int32)\n.input A\n.decl B(x: int32, y: int32)\n.input B\n\
+             .decl Out(x: int32)\n.output Out\n{rule}\n"
+        );
+        match checked(&src) {
+            Err(ParseError::AtomArity { found: got, .. }) => assert_eq!(got, found),
+            other => panic!("expected AtomArity, got {other:?}"),
+        }
+    }
 
     /// Body-positive atom literal: `Flag(5)` with `.decl Flag(x: int8)` must
     /// pin `5` to `Int8(5)` via `pin_atom`. If that pass becomes a no-op,
