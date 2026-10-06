@@ -150,9 +150,36 @@ impl Builder {
         Ok(())
     }
 
+    /// Compile one `.dl` program into `out_dir/<stem>.rs`, outside a build
+    /// script: nothing is read from the environment and no `cargo:`
+    /// directive is printed. `sm` receives the program's sources, so a
+    /// returned [`BoxError`] renders against them.
+    ///
+    /// For a host that generates and builds its own crate from a program
+    /// chosen at run time. A build script uses [`Self::compile`].
+    pub fn compile_into(
+        &self,
+        program_path: &Path,
+        out_dir: &Path,
+        sm: &mut SourceMap,
+    ) -> Result<(), BoxError> {
+        self.write_module(program_path, out_dir, sm)
+    }
+
     /// Compile one `.dl` program, populating the caller's [`SourceMap`]
     /// so any returned [`BoxError`] can be rendered against the source.
     fn compile_one(
+        &self,
+        program_path: &Path,
+        out_dir: &Path,
+        sm: &mut SourceMap,
+    ) -> Result<(), BoxError> {
+        self.write_module(program_path, out_dir, sm)?;
+        self.emit_rerun_if_changed(program_path);
+        Ok(())
+    }
+
+    fn write_module(
         &self,
         program_path: &Path,
         out_dir: &Path,
@@ -174,7 +201,6 @@ impl Builder {
         let output = pipeline::Pipeline::build(self, program_path, sm)?;
         let source = assembly::assemble(&output).map_err(BuildError::from)?;
         fs::write(out_dir.join(format!("{stem}.rs")), source).map_err(BuildError::from)?;
-        self.emit_rerun_if_changed(program_path);
         Ok(())
     }
 
