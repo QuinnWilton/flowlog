@@ -230,15 +230,15 @@ impl CanonicalForm {
                         right.key.len()
                     )));
                 }
+                // The two layouts name columns independently: a pushdown
+                // copy arranges its filter by the filter's first
+                // application, whose column names can coincide with the
+                // target's. The flow resolves a column both inputs name to
+                // the right input (`TransformationFlow::join_to_kv`), so the
+                // form does too and describes the dataflow codegen builds.
+                // The left input still meets the right through its key.
                 let mut exprs = left.column_exprs(left_input_kv_layout)?;
-                for (column, expr) in right.column_exprs(right_input_kv_layout)? {
-                    if exprs.insert(column, expr).is_some() {
-                        return Err(PlanError::internal(format!(
-                            "canonical form: join {} reads column {column} on both inputs",
-                            info.output_name()
-                        )));
-                    }
-                }
+                exprs.extend(right.column_exprs(right_input_kv_layout)?);
                 let (compare_equalities, compare_filters) =
                     Self::partition_compares(&predicates.compare_exprs, &exprs)?;
                 // A join matches the two keys position by position; that

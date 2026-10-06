@@ -1,0 +1,56 @@
+// ════════════════════════════════════════════════════════════════════════════
+// Suite   : pushdown_copy_shared_names
+// Feature : a pushdown copy of a semijoin filter whose column names, taken
+//           from the filter's first application, coincide with its target's
+// Covers  : the canonical form of the copy resolves a column both inputs name
+//           to the right input, as the join's flow does, instead of failing
+//           with "reads column 0.0 on both inputs" (found in argus's rules)
+// ════════════════════════════════════════════════════════════════════════════
+
+.decl function_def(func: symbol, mod: symbol, name: symbol, arity: number, exported: number)
+.decl supervisor_site(mod: symbol, site: symbol)
+.decl gen_server_like(mod: symbol)
+.decl genserver_sync_api(func: symbol, mod: symbol)
+genserver_sync_api(func, mod) :-
+  function_def(func, mod, _, _, 1),
+  gen_server_like(mod),
+  reaches_sync_caller_in(func, mod).
+.decl sync_dep(func: symbol, mod: symbol)
+sync_dep(f, m) :- genserver_sync_api(_, m), function_def(f, _, _, _, _).
+.decl reaches_sync_dep(func: symbol, mod: symbol)
+reaches_sync_dep(f, m) :- sync_dep(f, m).
+.decl reaches_sync_caller_in(func: symbol, mod: symbol)
+.decl module_sync_dep(from_mod: symbol, to_mod: symbol, witness: symbol)
+module_sync_dep(from_mod, to_mod, f) :- function_def(f, from_mod, _, _, _), reaches_sync_dep(f, to_mod).
+.decl stateful_module_dep(from_mod: symbol, to_mod: symbol, witness: symbol)
+stateful_module_dep(from_mod, to_mod, f) :- module_sync_dep(from_mod, to_mod, f).
+.decl dep_basis(from: symbol, to: symbol, basis: symbol, permille: number)
+.decl sibling_dependency(sup: symbol, caller: symbol, callee: symbol, reason: symbol, detail: symbol, sup_site: symbol, witness: symbol, site: symbol, basis: symbol, permille: number)
+.output sibling_dependency
+.decl dependency_on_unrestarted_sibling(sup: symbol, child: symbol, sibling: symbol, restart: symbol, witness: symbol)
+dependency_on_unrestarted_sibling(sup, child, sibling, restart, witness) :- may_stay_down(sup, sibling, restart), depends_on(child, sibling, witness).
+.decl may_stay_down(sup: symbol, sibling: symbol, restart: symbol)
+.decl depends_on(from: symbol, to: symbol, witness: symbol)
+depends_on(from, to, witness) :- stateful_module_dep(from, to, witness).
+sibling_dependency(sup, child, sibling, "restart_policy", restart, sup_site, witness, witness, basis, permille) :-
+  dependency_on_unrestarted_sibling(sup, child, sibling, restart, witness),
+  supervisor_site(sup, sup_site),
+  dep_basis(child, sibling, basis, permille).
+.decl function_def_in(func: symbol, mod: symbol, name: symbol, arity: number, exported: number)
+.input function_def_in(IO="file", filename="function_def.csv", delimiter=",")
+function_def(func, mod, name, arity, exported) :- function_def_in(func, mod, name, arity, exported).
+.decl supervisor_site_in(mod: symbol, site: symbol)
+.input supervisor_site_in(IO="file", filename="supervisor_site.csv", delimiter=",")
+supervisor_site(mod, site) :- supervisor_site_in(mod, site).
+.decl gen_server_like_in(mod: symbol)
+.input gen_server_like_in(IO="file", filename="gen_server_like.csv", delimiter=",")
+gen_server_like(mod) :- gen_server_like_in(mod).
+.decl reaches_sync_caller_in_in(func: symbol, mod: symbol)
+.input reaches_sync_caller_in_in(IO="file", filename="reaches_sync_caller_in.csv", delimiter=",")
+reaches_sync_caller_in(func, mod) :- reaches_sync_caller_in_in(func, mod).
+.decl dep_basis_in(from: symbol, to: symbol, basis: symbol, permille: number)
+.input dep_basis_in(IO="file", filename="dep_basis.csv", delimiter=",")
+dep_basis(from, to, basis, permille) :- dep_basis_in(from, to, basis, permille).
+.decl may_stay_down_in(sup: symbol, sibling: symbol, restart: symbol)
+.input may_stay_down_in(IO="file", filename="may_stay_down.csv", delimiter=",")
+may_stay_down(sup, sibling, restart) :- may_stay_down_in(sup, sibling, restart).

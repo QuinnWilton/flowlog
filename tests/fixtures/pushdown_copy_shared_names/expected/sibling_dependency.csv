@@ -1,0 +1,2 @@
+s1	m2	m1	restart_policy	temporary	site1	f2	f2	direct	900
+s1	m3	m1	restart_policy	temporary	site1	f3	f3	tag	500
