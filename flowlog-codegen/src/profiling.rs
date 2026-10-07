@@ -119,19 +119,19 @@ impl Codegen {
         quote! {
             // Per-operator metrics, keyed by operator id (worker-local).
             let metrics: Rc<RefCell<HashMap<usize, OpMetrics>>> =
-                Rc::new(RefCell::new(HashMap::new()));
+                Rc::new(RefCell::new(HashMap::default()));
             // Channel topology: id -> (scope_addr, source idx, source port,
             // target idx, target port, ships-batches). The flag marks
             // channels whose payload is arrangement batches; their message
             // counts are batch handles, not tuples.
             let chan_info: Rc<RefCell<HashMap<usize, (Vec<usize>, usize, usize, usize, usize, bool)>>> =
-                Rc::new(RefCell::new(HashMap::new()));
+                Rc::new(RefCell::new(HashMap::default()));
             // Per-channel record volume by direction. Each lands on the
             // operator's own worker (correct for >1).
             let chan_send: Rc<RefCell<HashMap<usize, i64>>> =
-                Rc::new(RefCell::new(HashMap::new()));
+                Rc::new(RefCell::new(HashMap::default()));
             let chan_recv: Rc<RefCell<HashMap<usize, i64>>> =
-                Rc::new(RefCell::new(HashMap::new()));
+                Rc::new(RefCell::new(HashMap::default()));
 
             let metrics_log = Rc::clone(&metrics);
             let chan_info_log = Rc::clone(&chan_info);

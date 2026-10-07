@@ -1,5 +1,5 @@
 //! Optimizer for FlowLog Datalog programs.
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use crate::catalog::Catalog;
 use crate::optimizer::plan_tree::PlanTree;
@@ -14,7 +14,7 @@ impl Optimizer {
     /// Create an empty optimizer instance.
     pub fn new() -> Self {
         Self {
-            relation_cardinality: HashMap::new(),
+            relation_cardinality: HashMap::default(),
         }
     }
 

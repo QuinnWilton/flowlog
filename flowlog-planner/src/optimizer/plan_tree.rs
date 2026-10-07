@@ -1,5 +1,5 @@
 //! Plan tree (left-to-right chain) over core atoms for FlowLog Datalog programs.
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use tracing::debug;
@@ -33,7 +33,7 @@ impl PlanTree {
 
         // The root of the plan tree is the last core atom (rightmost in join order).
         let root = core_atom_count - 1;
-        let mut tree: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut tree: HashMap<usize, Vec<usize>> = HashMap::default();
 
         // Build a left-deep tree: each parent points to its left neighbor as child.
         for pair in core_atoms.windows(2).rev() {

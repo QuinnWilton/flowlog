@@ -4,7 +4,7 @@
 //! - `info`: the per-rule description a step is materialized from.
 //! - `flow`: how output columns and filters read the input columns.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -511,7 +511,7 @@ mod tests {
 
     /// The output mutability of `left` joined with `right` on their keys.
     fn joined(left: &str, right: &str) -> Mutability {
-        let mut produced = HashMap::new();
+        let mut produced = HashMap::default();
         let left = arranged(left, false, &mut produced);
         let right = arranged(right, false, &mut produced);
         let info = TransformationInfo::join_to_kv(
@@ -534,7 +534,7 @@ mod tests {
     /// The output mutability of `source` rows whose key has no match in
     /// `filter`.
     fn antijoined(source: &str, filter: &str) -> Mutability {
-        let mut produced = HashMap::new();
+        let mut produced = HashMap::default();
         let filter = arranged(filter, true, &mut produced);
         let source = arranged(source, false, &mut produced);
         let info = TransformationInfo::anti_join_to_kv(
@@ -559,7 +559,7 @@ mod tests {
     #[case::static_relation("s", Mutability::Static)]
     #[case::mutable_relation("m", Mutability::Mutable)]
     fn unary_step_keeps_its_inputs_mutability(#[case] name: &str, #[case] expected: Mutability) {
-        let mut produced = HashMap::new();
+        let mut produced = HashMap::default();
         let arrangement = arranged(name, false, &mut produced);
         let info = TransformationInfo::kv_to_kv(
             arrangement.fingerprint(),
@@ -618,7 +618,7 @@ mod tests {
             layout(&[column(0, 0)], &[column(0, 1)]),
             KvPredicates::default(),
         );
-        let err = Transformation::from_info(&info, &mut HashMap::new(), &mutability_of)
+        let err = Transformation::from_info(&info, &mut HashMap::default(), &mutability_of)
             .expect_err("no mutability");
         assert!(
             matches!(&err, PlanError::Internal(_)) && err.to_string().contains("`x`"),

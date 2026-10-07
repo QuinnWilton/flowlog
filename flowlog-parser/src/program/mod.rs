@@ -13,8 +13,8 @@
 mod display;
 mod fact;
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 pub use fact::InlineFact;
 

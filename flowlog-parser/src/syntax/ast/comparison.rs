@@ -3,7 +3,7 @@
 //! [`ComparisonOperator`] identifies the operation and string negation;
 //! [`ComparisonExpr`] owns both operands and their surface rendering.
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
@@ -455,7 +455,7 @@ mod tests {
     fn vars_set_deduplicates_across_both_operands() {
         let expr: ComparisonExpr = parse_node(Rule::compare_expr, "x + x > x + y");
         let vars: HashSet<_> = expr.vars_set().into_iter().map(String::as_str).collect();
-        assert_eq!(vars, HashSet::from(["x", "y"]));
+        assert_eq!(vars, HashSet::from_iter(["x", "y"]));
     }
 
     #[test]
@@ -472,6 +472,6 @@ mod tests {
         .unwrap();
         assert_ne!(first.span(), second.span());
         assert_eq!(first, second);
-        assert_eq!(HashSet::from([first, second]).len(), 1);
+        assert_eq!(HashSet::from_iter([first, second]).len(), 1);
     }
 }

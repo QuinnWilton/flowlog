@@ -1,8 +1,8 @@
 //! Component expansion, inheritance, and scoped name resolution. Member types
 //! register under instance-qualified names in the shared [`TypeRegistry`].
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use flowlog_common::Span;
 
@@ -49,7 +49,7 @@ impl Assembler {
     /// Requires all top-level component definitions to have been collected.
     pub(super) fn expand(&mut self, root: Node<'_>) -> Result<(), ParseError> {
         // Sibling instances are visible regardless of their declaration order.
-        let mut global_instances = HashMap::new();
+        let mut global_instances = HashMap::default();
         for node in root.clone().children() {
             if node.rule() == Rule::init_decl {
                 let name = node
@@ -71,7 +71,7 @@ impl Assembler {
                 // Local directives see only this instance's subtree. References
                 // to other instances are deferred until all declarations exist.
                 let first_relation = self.relations.len();
-                self.inline_instance("", &global_instances, &HashMap::new(), init, first_relation)?;
+                self.inline_instance("", &global_instances, &HashMap::default(), init, first_relation)?;
             }
         }
         Ok(())
@@ -109,13 +109,13 @@ impl Assembler {
         let env: HashMap<String, String> =
             comp.type_params.iter().cloned().zip(init.args).collect();
 
-        let mut inheritance_stack = HashSet::new();
+        let mut inheritance_stack = HashSet::default();
         let body = resolve_inheritance(&comp, &env, &self.components, &mut inheritance_stack)?;
 
         // Hoist names so references within the body can precede declarations.
-        let mut local_decls = HashSet::new();
-        let mut local_types = HashSet::new();
-        let mut nested_inits = HashSet::new();
+        let mut local_decls = HashSet::default();
+        let mut local_types = HashSet::default();
+        let mut nested_inits = HashSet::default();
         for item in &body {
             match item {
                 RawItem::Decl(r) => {
@@ -444,7 +444,7 @@ fn resolve_inheritance(
 /// directives in the same comp collapse to one entry
 /// (Souffle-compatible). The raw spelling is kept for diagnostics.
 fn collect_overrides(body: &[RawItem]) -> HashMap<String, (Span, String)> {
-    let mut out: HashMap<String, (Span, String)> = HashMap::new();
+    let mut out: HashMap<String, (Span, String)> = HashMap::default();
     for item in body {
         if let RawItem::Override { name, span } = item {
             out.entry(name.to_lowercase())
@@ -768,20 +768,20 @@ mod tests {
     fn inline(init: InitDecl, comps: HashMap<String, CompDecl>) -> Result<(), ParseError> {
         let mut assembler = Assembler::new(TypeRegistry::new());
         assembler.components = comps;
-        assembler.inline_instance("", &HashMap::new(), &HashMap::new(), init, 0)
+        assembler.inline_instance("", &HashMap::default(), &HashMap::default(), init, 0)
     }
 
     #[test]
     fn inline_of_unknown_component_is_rejected() {
         assert_err!(
-            inline(init("c", "Container", &[]), HashMap::new()),
+            inline(init("c", "Container", &[]), HashMap::default()),
             ParseError::UnknownComponent { .. }
         );
     }
 
     #[test]
     fn inline_with_wrong_type_arg_count_is_rejected() {
-        let comps = HashMap::from([("Pair".to_string(), comp("Pair", &["T"], vec![]))]);
+        let comps = HashMap::from_iter([("Pair".to_string(), comp("Pair", &["T"], vec![]))]);
         assert_err!(
             inline(init("p", "Pair", &["number", "symbol"]), comps),
             ParseError::ComponentArityMismatch { .. }
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn inline_with_circular_inheritance_is_rejected() {
-        let comps = HashMap::from([
+        let comps = HashMap::from_iter([
             ("A".to_string(), comp("A", &[], vec![sref("B", &[])])),
             ("B".to_string(), comp("B", &[], vec![sref("A", &[])])),
         ]);
@@ -804,7 +804,7 @@ mod tests {
     /// the first.
     #[test]
     fn inline_with_circular_inheritance_via_second_parent_is_rejected() {
-        let comps = HashMap::from([
+        let comps = HashMap::from_iter([
             ("Leaf".to_string(), comp("Leaf", &[], vec![])),
             (
                 "A".to_string(),
@@ -899,7 +899,7 @@ mod tests {
             FileId::new(0),
         ))
         .expect("comp parses");
-        let comps = HashMap::from([("Holder".to_string(), holder)]);
+        let comps = HashMap::from_iter([("Holder".to_string(), holder)]);
         assert_err!(
             inline(init("h", "Holder", &[]), comps),
             ParseError::UnresolvedQualifiedRef { .. }

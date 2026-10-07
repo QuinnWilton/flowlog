@@ -3,8 +3,8 @@
 //! a referenced-but-underived relation an empty entry), and drop repeated
 //! inline facts. [`prune`] runs all three.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use tracing::warn;
 
@@ -44,7 +44,7 @@ fn identify_needed_components(
         .collect();
 
     // Map: head name -> rule indices that derive it.
-    let mut head_to_rules: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut head_to_rules: HashMap<String, Vec<usize>> = HashMap::default();
     for (i, r) in all_rules.iter().enumerate() {
         head_to_rules
             .entry(r.head().name().to_string())
@@ -108,7 +108,7 @@ fn identify_needed_components(
         .collect();
 
     // DFS traversal.
-    let mut processed: HashSet<usize> = HashSet::new();
+    let mut processed: HashSet<usize> = HashSet::default();
     let mut stack: Vec<usize> = needed_rules.iter().copied().collect();
 
     while let Some(rule_id) = stack.pop() {
@@ -202,8 +202,8 @@ fn prune_dead_components(program: &mut Program) {
 /// Souffle semantics it is the empty relation, so codegen gets an empty
 /// collection instead of an undefined binding.
 fn materialize_orphan_relations(program: &mut Program) {
-    let mut produced: HashSet<String> = HashSet::new();
-    let mut referenced: HashSet<String> = HashSet::new();
+    let mut produced: HashSet<String> = HashSet::default();
+    let mut referenced: HashSet<String> = HashSet::default();
     for rule in &program.rules {
         produced.insert(rule.head().name().to_string());
         for pred in rule.rhs() {
@@ -236,7 +236,7 @@ fn materialize_orphan_relations(program: &mut Program) {
 /// canonical spelling, so equal values are equal constants.
 fn dedup_inline_facts(program: &mut Program) {
     for rows in program.facts.values_mut() {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         rows.retain(|fact| seen.insert(fact.columns.clone()));
     }
 }

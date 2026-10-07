@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 use std::collections::VecDeque;
 
 use flowlog_parser::Constant;
@@ -180,7 +180,7 @@ impl RulePlanner {
         // the first occurrence of each. Order matters for sharing
         // optimization: a different processing order may yield different
         // fingerprints for the same plan operations.
-        let mut seen: HashSet<u64> = HashSet::new();
+        let mut seen: HashSet<u64> = HashSet::default();
         let tx_fps: Vec<u64> = self
             .transformation_infos
             .iter()

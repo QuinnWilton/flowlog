@@ -1,8 +1,8 @@
 //! Declaration and reference validation, including directive checks and
 //! application to declared relations.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use flowlog_common::Span;
 
@@ -17,7 +17,7 @@ use crate::error::ParseError;
 
 /// Rejects duplicate names across top-level and component declarations.
 pub(super) fn validate_declarations(relations: &[Relation]) -> Result<(), ParseError> {
-    let mut spans = HashMap::new();
+    let mut spans = HashMap::default();
     for relation in relations {
         if let Some(prior) = spans.insert(relation.name(), relation.span()) {
             return Err(ParseError::DuplicateDecl {
@@ -85,7 +85,7 @@ fn check_duplicate_directives<T>(
     name_of: impl Fn(&T) -> &str,
     get_span: impl Fn(&T) -> Span,
 ) -> Result<(), ParseError> {
-    let mut seen: HashMap<&str, Span> = HashMap::new();
+    let mut seen: HashMap<&str, Span> = HashMap::default();
     for d in dirs {
         let name = name_of(d);
         let span = get_span(d);
@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn apply_directives_rejects_directive_on_undeclared_relation() {
         // `.output missing_rel` with no matching `.decl`.
-        let output = OutputDirective::new("missing_rel".to_string(), HashMap::new(), Span::DUMMY);
+        let output = OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
         assert_err!(
             apply_directives(&mut [], vec![], vec![output], vec![]),
             ParseError::UndeclaredInDirective { .. }

@@ -6,7 +6,7 @@
 mod non_recursive;
 mod recursive;
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 use std::mem;
 
 use flowlog_planner::planner::StratumPlanner;

@@ -22,7 +22,7 @@
 //!
 //! [`Relation::raw_name`]: flowlog_parser::Relation::raw_name
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use proc_macro2::Ident;
 use quote::format_ident;
@@ -195,7 +195,7 @@ mod tests {
     /// intermediate ident.
     #[test]
     fn a_local_lookup_falls_back_to_the_intermediate_ident() {
-        let local = HashMap::from([(7, format_ident!("in_rel_0_edge"))]);
+        let local = HashMap::from_iter([(7, format_ident!("in_rel_0_edge"))]);
         assert_eq!(find_local_ident(&local, 7).to_string(), "in_rel_0_edge");
         assert_eq!(find_local_ident(&local, 8).to_string(), "t_8");
     }

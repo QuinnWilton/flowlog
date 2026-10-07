@@ -5,7 +5,7 @@
 //! next iteration reads; the prelude's outer-scope arrangements are what
 //! enters the loop.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_parser::AggregationOperator;
 use flowlog_parser::Mutability;
@@ -105,8 +105,8 @@ impl Codegen {
         // original contributions. In particular, a seeded count result of 0
         // is an answer, not an input row that should be counted again at
         // leave.
-        let mut deduped_bindings: HashMap<u64, Ident> = HashMap::new();
-        let mut next_bindings: HashMap<u64, Ident> = HashMap::new();
+        let mut deduped_bindings: HashMap<u64, Ident> = HashMap::default();
+        let mut next_bindings: HashMap<u64, Ident> = HashMap::default();
         let mut head_stmts = Vec::new();
         for (idb_fp, head_fps) in stratum.idb_to_heads_map() {
             let name = self.display_name(*idb_fp);
@@ -221,9 +221,9 @@ impl Codegen {
         enter_fps: &[u64],
         plan_graph: &mut Option<PlanGraph>,
     ) -> (Vec<TokenStream>, HashMap<u64, Ident>, HashMap<u64, Ident>) {
-        let mut bindings: HashMap<u64, Ident> = HashMap::new();
+        let mut bindings: HashMap<u64, Ident> = HashMap::default();
         let mut stmts: Vec<TokenStream> = Vec::new();
-        let mut recursive_arranged: HashMap<u64, Ident> = HashMap::new();
+        let mut recursive_arranged: HashMap<u64, Ident> = HashMap::default();
 
         for fp in enter_fps {
             let source = outer_fp_to_arrangement

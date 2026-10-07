@@ -1,8 +1,8 @@
 //! Stratum planner that plans a stratum (a group of rules).
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use std::fmt;
 use std::mem;
 
@@ -194,7 +194,7 @@ impl StratumPlanner {
             .collect();
         // Each rule's last transformation is its head; dedup rewrites the
         // map as it merges heads or serves one from another collection.
-        let mut idb_to_heads_map: HashMap<u64, Vec<u64>> = HashMap::new();
+        let mut idb_to_heads_map: HashMap<u64, Vec<u64>> = HashMap::default();
         for (catalog, planner) in catalogs.iter().zip(&rule_planners) {
             if let Some(head) = planner.transformations().last() {
                 idb_to_heads_map
@@ -405,7 +405,7 @@ impl StratumPlanner {
         let mut dynamic_fingerprints: HashSet<u64> =
             self.idb_to_heads_map.keys().copied().collect();
 
-        let mut dynamic_indices = HashSet::new();
+        let mut dynamic_indices = HashSet::default();
 
         for (i, transformation) in self.transformations.iter().enumerate() {
             let consumes_dynamic = if transformation.is_unary() {
@@ -452,8 +452,8 @@ impl StratumPlanner {
         available_relations: &HashSet<u64>,
         preludes: &[Transformation],
     ) {
-        let mut recursion_input_fps: HashSet<u64> = HashSet::new();
-        let mut recursion_output_fps: HashSet<u64> = HashSet::new();
+        let mut recursion_input_fps: HashSet<u64> = HashSet::default();
+        let mut recursion_output_fps: HashSet<u64> = HashSet::default();
         let mut available_fps = available_relations.clone();
 
         for tx in self.non_recursive_transformations.iter().chain(preludes) {
@@ -490,8 +490,8 @@ impl StratumPlanner {
     fn build_idb_to_aggregation_map(
         rules: &[FlowLogRule],
     ) -> Result<HashMap<u64, (AggregationOperator, usize, usize)>, PlanError> {
-        let mut aggregations = HashMap::new();
-        let mut first_spans = HashMap::new();
+        let mut aggregations = HashMap::default();
+        let mut first_spans = HashMap::default();
 
         for rule in rules {
             let head = rule.head();

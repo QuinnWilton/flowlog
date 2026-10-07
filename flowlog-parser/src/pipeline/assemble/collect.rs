@@ -1,7 +1,7 @@
 //! Top-level item collection and declaration resolution. Declarations resolve
 //! separately, once component expansion has registered all member types.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use super::Assembler;
 use crate::Node;
@@ -19,7 +19,7 @@ impl Assembler {
     /// directives. Leaves rules, instances, and declarations unresolved.
     pub(super) fn collect(root: Node<'_>, type_registry: TypeRegistry) -> Result<Self, ParseError> {
         let mut assembler = Self::new(type_registry);
-        let mut udf_spans = HashMap::new();
+        let mut udf_spans = HashMap::default();
 
         for node in root.children() {
             match node.rule() {

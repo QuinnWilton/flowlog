@@ -6,8 +6,8 @@
 //!   [`DataType`]s, so subtypes are zero-cost compile-time phantom
 //!   types.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use flowlog_common::FileId;
 use flowlog_common::Span;
@@ -71,8 +71,8 @@ impl TypeRegistry {
     pub(crate) fn new() -> Self {
         let mut reg = Self {
             types: Vec::with_capacity(16),
-            by_name: HashMap::with_capacity(20),
-            tuples: HashMap::new(),
+            by_name: HashMap::with_capacity_and_hasher(20, Default::default()),
+            tuples: HashMap::default(),
         };
         for (i, (prim, names)) in PRIM_NAMES.iter().enumerate() {
             reg.types.push(TypeDef {
@@ -249,7 +249,7 @@ impl TypeRegistry {
     /// caught by id comparison, not the `tuples` table.
     fn tuple_reaches(&self, target: TypeId, fields: &[TypeId]) -> bool {
         let mut stack: Vec<TypeId> = fields.to_vec();
-        let mut seen: HashSet<TypeId> = HashSet::new();
+        let mut seen: HashSet<TypeId> = HashSet::default();
         while let Some(t) = stack.pop() {
             if t == target {
                 return true;

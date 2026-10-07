@@ -4,8 +4,8 @@
 //! arrangement a later join reads. The closures' pieces come from
 //! [`expr`](crate::expr).
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use flowlog_planner::planner::ArithmeticArgument;
 use flowlog_planner::planner::Collection;

@@ -5,8 +5,8 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use flowlog_common::SUBSECTION_BAR;
@@ -47,7 +47,7 @@ impl Stratum {
             is_recursive,
             recursive_relations: Vec::new(),
             leave_relations: Vec::new(),
-            available_relations: HashSet::new(),
+            available_relations: HashSet::default(),
             mutabilities: BTreeMap::new(),
         }
     }
@@ -232,7 +232,7 @@ impl Stratifier {
             .into_iter()
             .map(|r| r.fingerprint())
             .collect();
-        let mut later_union: HashSet<u64> = HashSet::new();
+        let mut later_union: HashSet<u64> = HashSet::default();
         let mut later_body_atoms = Vec::with_capacity(self.strata.len());
         for stratum in self.strata.iter().rev() {
             later_body_atoms.push(later_union.clone());
@@ -246,7 +246,7 @@ impl Stratifier {
         later_body_atoms.reverse();
 
         let edb_fps = program.edb_fingerprints();
-        let mut accumulated = HashSet::new();
+        let mut accumulated = HashSet::default();
         for (stratum, later_body_atoms) in self.strata.iter_mut().zip(later_body_atoms) {
             let heads: BTreeSet<u64> = stratum
                 .rule_ids

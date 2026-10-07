@@ -1,7 +1,7 @@
 //! Builds dense rule dependency graphs for stratification.
 
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Predicate;
@@ -81,7 +81,7 @@ impl DependencyGraph {
     }
 
     fn build_head_to_rule_map(rules: &[FlowLogRule]) -> HashMap<String, Vec<usize>> {
-        let mut map: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut map: HashMap<String, Vec<usize>> = HashMap::default();
         for (id, rule) in rules.iter().enumerate() {
             map.entry(rule.head().name().to_string())
                 .or_default()

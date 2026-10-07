@@ -31,7 +31,7 @@ fn profile_imports(profile: bool) -> TokenStream {
         return quote! {};
     }
     quote! {
-        use std::collections::HashMap;
+        use flowlog_common::collections::HashMap;
         use std::cell::RefCell;
         use std::rc::Rc;
         use std::time::Duration;

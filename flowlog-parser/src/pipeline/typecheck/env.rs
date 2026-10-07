@@ -6,7 +6,7 @@
 //! arguments). [`PrimitiveEnv`] holds both as by-name maps built up front, so
 //! no checker re-walks the program's declarations.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use crate::DataType;
 use crate::Program;

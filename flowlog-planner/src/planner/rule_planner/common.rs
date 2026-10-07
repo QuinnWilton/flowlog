@@ -8,8 +8,8 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use tracing::trace;
 
@@ -745,7 +745,7 @@ impl RulePlanner {
         PlanError,
     > {
         // Build mapping from argument names to RHS signatures for efficient lookup
-        let mut rhs_name_to_sig = HashMap::new();
+        let mut rhs_name_to_sig = HashMap::default();
         for sig in rhs_sigs {
             let name = catalog.signature_to_argument_str(sig)?.to_string();
             rhs_name_to_sig.insert(name, *sig);

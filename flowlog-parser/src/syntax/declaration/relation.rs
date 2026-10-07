@@ -1,6 +1,6 @@
 //! Relation declaration types for FlowLog Datalog programs.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use educe::Educe;
@@ -124,7 +124,7 @@ impl Relation {
         for child in children {
             match child.rule() {
                 Rule::attributes_decl => {
-                    let mut seen: HashMap<String, Span> = HashMap::new();
+                    let mut seen: HashMap<String, Span> = HashMap::default();
                     for attr in child.children() {
                         let attr_span = attr.span();
                         let mut parts = attr.children();
@@ -528,7 +528,7 @@ mod tests {
     #[test]
     fn an_adopted_input_defaults_its_filename_to_the_raw_name() {
         let mut rel = Relation::new("Edge", attrs());
-        rel.set_input(&HashMap::new(), Span::DUMMY).unwrap();
+        rel.set_input(&HashMap::default(), Span::DUMMY).unwrap();
         assert_eq!(rel.input().unwrap().filename(), Some("Edge.facts"));
         assert!(rel.has_input());
     }
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn an_adopted_output_defaults_its_filename_to_the_raw_name() {
         let mut rel = Relation::new("Path", attrs());
-        rel.set_output(&HashMap::new(), Span::DUMMY).unwrap();
+        rel.set_output(&HashMap::default(), Span::DUMMY).unwrap();
         assert_eq!(rel.output_sink().unwrap().filename(), "Path.csv");
         assert!(rel.has_output());
     }
@@ -592,7 +592,7 @@ mod tests {
         #[case] parallel: bool,
     ) {
         let mut rel = Relation::new("r", attrs().into_iter().take(arity).collect());
-        let p = order_by.map_or_else(HashMap::new, |spec| params([("order_by", spec)]));
+        let p = order_by.map_or_else(HashMap::default, |spec| params([("order_by", spec)]));
         rel.set_output(&p, Span::DUMMY).unwrap();
         assert_eq!(rel.uses_parallel_file_drain(output_to_stdout), parallel);
     }

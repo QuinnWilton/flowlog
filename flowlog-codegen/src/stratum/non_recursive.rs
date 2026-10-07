@@ -1,7 +1,7 @@
 //! A non-recursive stratum: its prelude, then each relation's head step,
 //! the union of its rule heads with its earlier binding, outside any loop.
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 
 use flowlog_planner::planner::StratumPlanner;
 use flowlog_planner::planner::aggregate_mutability;

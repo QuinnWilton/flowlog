@@ -29,8 +29,8 @@ mod stratum;
 mod test_harness;
 mod ty;
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 pub use error::CodegenError;
 pub(crate) use expr::term::constant::const_to_token;
@@ -91,11 +91,11 @@ impl Codegen {
         Self {
             config,
             program,
-            global_fp_to_ident: HashMap::new(),
-            global_fp_to_type: HashMap::new(),
-            outer_fp_to_arrangement: HashMap::new(),
-            arranged_reads: HashSet::new(),
-            global_fp_to_mutability: HashMap::new(),
+            global_fp_to_ident: HashMap::default(),
+            global_fp_to_type: HashMap::default(),
+            outer_fp_to_arrangement: HashMap::default(),
+            arranged_reads: HashSet::default(),
+            global_fp_to_mutability: HashMap::default(),
         }
     }
 

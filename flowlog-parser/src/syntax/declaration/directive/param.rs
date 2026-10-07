@@ -3,7 +3,7 @@
 //! way. Every other parameter's meaning is the directive's own business, so
 //! neither borrows the other's resolution.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_common::Span;
 
@@ -28,7 +28,7 @@ pub(in crate::syntax::declaration) fn parse_io_directive(
     let raw_name = name_node.text().to_string();
     let parameters = match children.take_if(Rule::io_params) {
         Some(params) => parse_io_params(params)?,
-        None => HashMap::new(),
+        None => HashMap::default(),
     };
     Ok((raw_name, parameters, span))
 }
@@ -39,7 +39,7 @@ pub(in crate::syntax::declaration) fn parse_io_directive(
 /// and a name repeated in the list keeps only its last value.
 fn parse_io_params(node: Node) -> Result<HashMap<String, String>, ParseError> {
     debug_assert_eq!(node.rule(), Rule::io_params);
-    let mut parameters = HashMap::new();
+    let mut parameters = HashMap::default();
     for io_param in node.children() {
         let mut kv = io_param.children();
         let key = kv.next_any("parameter name")?.text().to_string();
@@ -83,13 +83,13 @@ mod tests {
     /// Parameters holding one `delimiter` entry, already decoded as the
     /// grammar hands it over.
     fn delim_params(value: &str) -> HashMap<String, String> {
-        HashMap::from([("delimiter".to_string(), value.to_string())])
+        HashMap::from_iter([("delimiter".to_string(), value.to_string())])
     }
 
     #[test]
     fn delimiter_defaults_to_tab_when_unset() {
         assert_eq!(
-            parse_delimiter(&HashMap::new(), Span::DUMMY).unwrap(),
+            parse_delimiter(&HashMap::default(), Span::DUMMY).unwrap(),
             b'\t'
         );
     }

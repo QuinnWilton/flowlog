@@ -1,6 +1,6 @@
 //! Check and pin every rule: its body predicates, then its head (the composer).
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use crate::Aggregation;
 use crate::AggregationOperator;
@@ -34,7 +34,7 @@ pub(super) fn check_and_pin_rules(
     env: &PrimitiveEnv,
 ) -> Result<(), ParseError> {
     for rule in program.rules_mut() {
-        let mut bindings: Bindings = HashMap::new();
+        let mut bindings: Bindings = HashMap::default();
         for predicate in rule.rhs() {
             if let Predicate::PositiveAtom(atom) = predicate {
                 bind_atom(atom, &env.decls, &mut bindings)?;

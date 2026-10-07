@@ -5,7 +5,7 @@
 //! collide after conversion. Runtime loaders and emitters convert between
 //! engine storage and these public tuple types.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::io;
 
 use flowlog_codegen::user_tuple_tokens;
@@ -107,7 +107,7 @@ fn collect_user_rels(program: &Program) -> Vec<&Relation> {
 pub(super) fn validate_api_surface(program: &Program) -> Result<(), BuildError> {
     // Both directives add fields to the same result struct, so a size
     // field must also be checked against ordinary output fields.
-    let mut fields: HashMap<String, String> = HashMap::new();
+    let mut fields: HashMap<String, String> = HashMap::default();
     for rel in program.output_idbs() {
         ensure_plain_ident(rel.name(), rel.raw_name(), "a results field")?;
         ensure_unique(
@@ -122,7 +122,7 @@ pub(super) fn validate_api_surface(program: &Program) -> Result<(), BuildError> 
         ensure_unique(&mut fields, field, rel.raw_name(), "results field")?;
     }
 
-    let mut aliases: HashMap<String, String> = HashMap::new();
+    let mut aliases: HashMap<String, String> = HashMap::default();
     for rel in collect_user_rels(program) {
         let stem = pascal_case(rel.name());
         ensure_plain_ident(&stem, rel.raw_name(), "a `rel::` type alias")?;

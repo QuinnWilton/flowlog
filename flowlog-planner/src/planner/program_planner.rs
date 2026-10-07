@@ -50,7 +50,7 @@ impl ProgramPlanner {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use flowlog_common::collections::HashMap;
 
     use flowlog_common::compute_fp;
 
@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(pp.strata().len(), 3, "dyck should stratify into 3 strata");
 
         // No prelude collection is computed by two strata.
-        let mut owner: HashMap<u64, usize> = HashMap::new();
+        let mut owner: HashMap<u64, usize> = HashMap::default();
         for (idx, stratum) in pp.strata().iter().enumerate() {
             for t in stratum.non_recursive_transformations() {
                 let fp = t.output().fingerprint();
@@ -345,7 +345,7 @@ mod tests {
 
         for src in [DYCK_SRC, RHS_ID_SHARING_SRC, PUSHDOWN_SRC] {
             let pp = program_planner(src);
-            let mut seen: HashMap<u64, (&str, Vec<u64>, TransformationFlow)> = HashMap::new();
+            let mut seen: HashMap<u64, (&str, Vec<u64>, TransformationFlow)> = HashMap::default();
             for stratum in pp.strata() {
                 for planner in stratum.rule_planners() {
                     for tx in planner.transformations() {

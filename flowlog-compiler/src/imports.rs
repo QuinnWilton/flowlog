@@ -43,7 +43,7 @@ pub(crate) fn gen_imports(config: &Config, program: &Program) -> TokenStream {
     }
     if prof {
         out.push(quote! {
-            use std::collections::HashMap;
+            use flowlog_common::collections::HashMap;
             use timely::logging::{StartStop, TimelyEvent, TimelyEventBuilder};
         });
     }

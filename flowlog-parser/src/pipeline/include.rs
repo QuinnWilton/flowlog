@@ -3,7 +3,7 @@
 //! [`resolve_includes`] inlines every `.include` in a file (and its includes,
 //! transitively) and returns the combined source.
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -54,9 +54,9 @@ pub(super) fn resolve_includes_of(
         .unwrap_or_else(|| PathBuf::from("."));
     // Seed the DFS stack with the root so an include pointing back at it is
     // caught as a cycle; `completed` then dedups diamond includes.
-    let mut in_progress = HashSet::new();
+    let mut in_progress = HashSet::default();
     in_progress.insert(fs::canonicalize(root_path).unwrap_or_else(|_| root_path.to_path_buf()));
-    let mut completed = HashSet::new();
+    let mut completed = HashSet::default();
     inline_includes(
         sm.text(root_file).to_string(),
         root_file,

@@ -6,7 +6,7 @@
 //!   groups, and tuples)
 //! - [`Arithmetic`]: a left-to-right fold with precedence encoded as groups
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
@@ -666,7 +666,7 @@ mod tests {
     fn vars_set_contains_each_variable_once() {
         let expr: Arithmetic = parse_node(Rule::arithmetic_expr, "x + x + y");
         let vars: HashSet<_> = expr.vars_set().into_iter().map(String::as_str).collect();
-        assert_eq!(vars, HashSet::from(["x", "y"]));
+        assert_eq!(vars, HashSet::from_iter(["x", "y"]));
     }
 
     #[rstest]
