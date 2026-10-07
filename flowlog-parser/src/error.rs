@@ -42,6 +42,7 @@ pub enum DirectiveKind {
     Input,
     Output,
     PrintSize,
+    LimitSize,
 }
 
 impl fmt::Display for DirectiveKind {
@@ -50,6 +51,7 @@ impl fmt::Display for DirectiveKind {
             DirectiveKind::Input => ".input",
             DirectiveKind::Output => ".output",
             DirectiveKind::PrintSize => ".printsize",
+            DirectiveKind::LimitSize => ".limitsize",
         })
     }
 }
@@ -114,6 +116,10 @@ pub enum ParseError {
         kind: DirectiveKind,
         name: String,
     },
+
+    /// A `.limitsize` whose `n` is not a count of rows.
+    #[error("`.limitsize` takes a count of rows, not `{text}`")]
+    InvalidLimitSize { span: Span, text: String },
 
     /// A directive names a relation that was never `.decl`-d.
     #[error("{kind} directive references undeclared relation `{name}`")]
@@ -642,6 +648,12 @@ impl Diagnostic for ParseError {
                 "duplicate attribute here",
                 "first declared here",
             )),
+
+            ParseError::InvalidLimitSize { span, .. } => base
+                .with_labels(primary_only(*span))
+                .with_notes(vec![
+                    "write the most rows the relation may hold: `.limitsize R(n=500000)`".into(),
+                ]),
 
             ParseError::UndeclaredInDirective { span, name, .. } => base
                 .with_labels(primary_only(*span))

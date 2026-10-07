@@ -4,7 +4,8 @@
 //! - [`Relation`]: a relation `.decl` with its attributes and I/O config.
 //! - [`Mutability`]: the `static` / `mutable` keyword on a `.decl`.
 //! - [`ExternFn`]: an `.extern fn` signature.
-//! - [`InputDirective`] / [`OutputDirective`] / [`PrintSizeDirective`]:
+//! - [`InputDirective`] / [`OutputDirective`] / [`PrintSizeDirective`] /
+//!   [`LimitSizeDirective`]:
 //!   `.input` / `.output` / `.printsize`, each folded into its `Relation`
 //!   as an [`InputSource`] / [`OutputSink`].
 //! - `comp`: raw `.comp` / `.init` AST, inlined and discarded before
@@ -26,6 +27,7 @@ pub(crate) use comp::RawRelation;
 pub(crate) use comp::SuperRef;
 pub(crate) use directive::InputDirective;
 pub use directive::InputSource;
+pub(crate) use directive::LimitSizeDirective;
 pub use directive::OrderKey;
 pub(crate) use directive::OutputDirective;
 pub use directive::OutputSink;

@@ -13,7 +13,7 @@
 // Main grammar entry point
 main_grammar = {
     SOI ~
-    (declaration | type_alias_decl | extern_fn | include_directive | input_directive | output_directive | printsize_directive | comp_decl | init_decl | fact | rule)* ~
+    (declaration | type_alias_decl | extern_fn | include_directive | input_directive | output_directive | printsize_directive | limitsize_directive | comp_decl | init_decl | fact | rule)* ~
     EOI
 }
 
@@ -208,6 +208,13 @@ parameter_value = { string }
 // Example: .printsize Relation
 printsize_directive = {
     ".printsize" ~ relation_ref
+}
+
+// Size limit for a relation, as Soufflé's: a solve stops as the relation
+// grows past `n` rows, rather than derive a fixpoint the program will not
+// use. Example: .limitsize Path(n=1000000)
+limitsize_directive = {
+    ".limitsize" ~ relation_ref ~ "(" ~ "n" ~ "=" ~ integer ~ ")"
 }
 
 // Include directive: pull another .dl file into the current program.
@@ -585,8 +592,8 @@ init_decl = { ".init" ~ identifier ~ "=" ~ identifier ~ comp_type_args? }
 // inherits the hint without extra plumbing in the inliner.
 comp_body_item = {
     declaration | type_alias_decl | input_directive | output_directive
-    | printsize_directive | rule | fact | comp_decl | init_decl
-    | override_directive
+    | printsize_directive | limitsize_directive | rule | fact | comp_decl
+    | init_decl | override_directive
 }
 
 // Drop inherited rules and facts for `Name`; the parent's `.decl Name`

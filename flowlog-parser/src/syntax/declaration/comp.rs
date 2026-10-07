@@ -243,6 +243,11 @@ pub(crate) enum RawItem {
         name: String,
         span: Span,
     },
+    Limitsize {
+        name: String,
+        rows: u64,
+        span: Span,
+    },
     /// Nested `.init` inside a component body.
     Init(InitDecl),
     /// Nested `.comp` inside a component body. Rare; hoisted to the
@@ -288,6 +293,10 @@ impl RawItem {
                 RawItem::Output { name, params, span }
             }
             Rule::printsize_directive => parse_raw_printsize(node)?,
+            Rule::limitsize_directive => {
+                let (name, rows, span) = crate::declaration::LimitSizeDirective::parse_parts(node)?;
+                RawItem::Limitsize { name, rows, span }
+            }
             Rule::comp_decl => RawItem::Comp(CompDecl::from_parsed_rule(node)?),
             Rule::init_decl => RawItem::Init(InitDecl::from_parsed_rule(node)?),
             Rule::override_directive => parse_raw_override(node)?,

@@ -95,6 +95,8 @@ pub struct Relation {
 
     /// Whether to print results size (e.g. row count)
     printsize: bool,
+    /// The most rows the relation may hold (`.limitsize`).
+    limitsize: Option<u64>,
 
     /// The mutability the `.decl` names, or `None` when it names none.
     mutability: Option<Mutability>,
@@ -184,6 +186,7 @@ impl Relation {
             input: None,
             output: None,
             printsize: false,
+            limitsize: None,
             mutability,
             span,
         })
@@ -218,6 +221,7 @@ impl Relation {
             input: None,
             output: None,
             printsize: false,
+            limitsize: None,
             mutability,
             span,
         }
@@ -354,6 +358,14 @@ impl Relation {
         self.printsize
     }
 
+    /// The most rows the relation may hold (`.limitsize`): an engine that
+    /// honours it stops a solve as the relation grows past them.
+    #[must_use]
+    #[inline]
+    pub fn limitsize(&self) -> Option<u64> {
+        self.limitsize
+    }
+
     /// Returns `true` if this relation has an `.output` directive, whatever
     /// storage it names.
     #[must_use]
@@ -421,6 +433,11 @@ impl Relation {
     /// Set printsize flag.
     pub(crate) fn set_printsize(&mut self, printsize: bool) {
         self.printsize = printsize;
+    }
+
+    /// Set the most rows the relation may hold.
+    pub(crate) fn set_limitsize(&mut self, rows: Option<u64>) {
+        self.limitsize = rows;
     }
 
     /// Number of attributes.

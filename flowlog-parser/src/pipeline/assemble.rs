@@ -18,6 +18,7 @@ use crate::ast::FlowLogRule;
 use crate::declaration::CompDecl;
 use crate::declaration::ExternFn;
 use crate::declaration::InputDirective;
+use crate::declaration::LimitSizeDirective;
 use crate::declaration::OutputDirective;
 use crate::declaration::PrintSizeDirective;
 use crate::declaration::Relation;
@@ -41,6 +42,7 @@ struct Assembler {
     input_directives: Vec<InputDirective>,
     output_directives: Vec<OutputDirective>,
     printsize_directives: Vec<PrintSizeDirective>,
+    limitsize_directives: Vec<LimitSizeDirective>,
 }
 
 impl Assembler {
@@ -55,6 +57,7 @@ impl Assembler {
             input_directives: Vec::new(),
             output_directives: Vec::new(),
             printsize_directives: Vec::new(),
+            limitsize_directives: Vec::new(),
         }
     }
 
@@ -66,6 +69,7 @@ impl Assembler {
             self.input_directives,
             self.output_directives,
             self.printsize_directives,
+            self.limitsize_directives,
         )?;
         // Component directives were applied while inlining, so only now is
         // the full set of reported relations known.
@@ -148,6 +152,63 @@ mod tests {
             FileId::new(0),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_limitsize_holds_its_relation_to_a_number_of_rows() {
+        let program = collect_program(
+            ".decl E(x: number)\n.input E\n.decl R(x: number)\n.output R\n\
+             .limitsize R(n=500)\nR(x) :- E(x).\n",
+            FileId::new(0),
+        )
+        .unwrap();
+        let limits: Vec<(&str, Option<u64>)> = program
+            .relations()
+            .iter()
+            .map(|r| (r.name(), r.limitsize()))
+            .collect();
+        assert!(limits.contains(&("r", Some(500))), "{limits:?}");
+        assert!(limits.contains(&("e", None)), "{limits:?}");
+    }
+
+    #[test]
+    fn a_limitsize_of_an_undeclared_relation_or_twice_is_refused() {
+        assert_err!(
+            collect_program(
+                ".decl R(x: number)\n.output R\n.limitsize S(n=5)\nR(1).\n",
+                FileId::new(0),
+            ),
+            ParseError::UndeclaredInDirective {
+                kind: crate::error::DirectiveKind::LimitSize,
+                ..
+            }
+        );
+        assert_err!(
+            collect_program(
+                ".decl R(x: number)\n.output R\n.limitsize R(n=5)\n.limitsize R(n=6)\nR(1).\n",
+                FileId::new(0),
+            ),
+            ParseError::DuplicateDirective { .. }
+        );
+    }
+
+    #[test]
+    fn a_limitsize_inside_a_component_names_the_instance_relation() {
+        let program = collect_program(
+            ".comp C {\n  .decl R(x: number)\n  .output R\n  .limitsize R(n=7)\n  R(1).\n}\n\
+             .init c = C\n",
+            FileId::new(0),
+        )
+        .unwrap();
+        assert!(
+            program.relations().iter().any(|r| r.limitsize() == Some(7)),
+            "{:?}",
+            program
+                .relations()
+                .iter()
+                .map(|r| (r.name(), r.limitsize()))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
