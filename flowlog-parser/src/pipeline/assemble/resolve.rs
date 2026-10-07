@@ -10,6 +10,7 @@ use flowlog_common::collections::HashSet;
 use crate::DataType;
 use crate::ast::FlowLogRule;
 use crate::declaration::InputDirective;
+use crate::declaration::LimitSizeDirective;
 use crate::declaration::OutputDirective;
 use crate::declaration::PrintSizeDirective;
 use crate::declaration::Relation;
@@ -61,7 +62,8 @@ fn check_lattice(relation: &Relation) -> Result<(), ParseError> {
     Ok(())
 }
 
-/// Applies `.input`, `.output`, and `.printsize` directives to `relations`.
+/// Applies `.input`, `.output`, `.printsize`, and `.limitsize` directives
+/// to `relations`.
 ///
 /// Errors if a directive names a relation with no corresponding `.decl`, or if
 /// two directives of the same kind name the same relation.
@@ -70,6 +72,7 @@ pub(super) fn apply_directives(
     input_directives: Vec<InputDirective>,
     output_directives: Vec<OutputDirective>,
     printsize_directives: Vec<PrintSizeDirective>,
+    limitsize_directives: Vec<LimitSizeDirective>,
 ) -> Result<(), ParseError> {
     check_duplicate_directives(
         &input_directives,
@@ -86,6 +89,12 @@ pub(super) fn apply_directives(
     check_duplicate_directives(
         &printsize_directives,
         DirectiveKind::PrintSize,
+        |d| d.relation_name(),
+        |d| d.span(),
+    )?;
+    check_duplicate_directives(
+        &limitsize_directives,
+        DirectiveKind::LimitSize,
         |d| d.relation_name(),
         |d| d.span(),
     )?;
@@ -132,6 +141,18 @@ pub(super) fn apply_directives(
                 return Err(ParseError::UndeclaredInDirective {
                     span: d.span(),
                     kind: DirectiveKind::PrintSize,
+                    name: d.relation_name().to_string(),
+                });
+            }
+        }
+    }
+    for d in limitsize_directives {
+        match relations.iter_mut().find(|r| r.name() == d.relation_name()) {
+            Some(rel) => rel.set_limitsize(Some(d.rows())),
+            None => {
+                return Err(ParseError::UndeclaredInDirective {
+                    span: d.span(),
+                    kind: DirectiveKind::LimitSize,
                     name: d.relation_name().to_string(),
                 });
             }
@@ -290,7 +311,7 @@ mod tests {
         let output =
             OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
         assert_err!(
-            apply_directives(&mut [], vec![], vec![output], vec![]),
+            apply_directives(&mut [], vec![], vec![output], vec![], vec![]),
             ParseError::UndeclaredInDirective { .. }
         );
     }
