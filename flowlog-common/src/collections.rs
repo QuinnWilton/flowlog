@@ -6,12 +6,18 @@
 //! to the next. The compiler's crates use these instead: the same program
 //! plans and generates the same code every time, and a build is
 //! reproducible.
+//!
+//! The hasher is FxHash: its seed is fixed, and it is several times faster
+//! than SipHash over the planner's keys (expressions, atom signatures,
+//! canonical forms), which it hashes whole and often. Planning argus's
+//! largest program spent nearly half its time in SipHash.
 
-use std::collections::hash_map::DefaultHasher;
 use std::hash::BuildHasherDefault;
 
-/// The hasher of every map and set here: SipHash with fixed keys.
-pub type FixedState = BuildHasherDefault<DefaultHasher>;
+use rustc_hash::FxHasher;
+
+/// The hasher of every map and set here: FxHash, whose seed is fixed.
+pub type FixedState = BuildHasherDefault<FxHasher>;
 
 /// A `std` hash map with a fixed hasher (`HashMap::default()`).
 pub type HashMap<K, V> = std::collections::HashMap<K, V, FixedState>;
