@@ -13,6 +13,7 @@ use crate::declaration::Attribute;
 use crate::declaration::CompDecl;
 use crate::declaration::InitDecl;
 use crate::declaration::InputDirective;
+use crate::declaration::LimitSizeDirective;
 use crate::declaration::OutputDirective;
 use crate::declaration::PrintSizeDirective;
 use crate::declaration::RawAttribute;
@@ -147,6 +148,7 @@ impl Assembler {
                 | RawItem::Input { .. }
                 | RawItem::Output { .. }
                 | RawItem::Printsize { .. }
+                | RawItem::Limitsize { .. }
                 | RawItem::Override { .. } => {}
             }
         }
@@ -313,6 +315,18 @@ impl Assembler {
                         None => self
                             .printsize_directives
                             .push(PrintSizeDirective::new(lc, span)),
+                    }
+                }
+                RawItem::Limitsize { name, rows, span } => {
+                    let lc = resolve_qualified(&name, span, scope, true)?.to_lowercase();
+                    match self.relations[first_relation..]
+                        .iter_mut()
+                        .find(|r| r.name() == lc)
+                    {
+                        Some(rel) => rel.set_limitsize(Some(rows)),
+                        None => self
+                            .limitsize_directives
+                            .push(LimitSizeDirective::new(lc, rows, span)),
                     }
                 }
                 RawItem::Decl(_)
@@ -510,6 +524,7 @@ fn decl_map(items: &[RawItem]) -> HashMap<String, &RawRelation> {
             | RawItem::Input { .. }
             | RawItem::Output { .. }
             | RawItem::Printsize { .. }
+            | RawItem::Limitsize { .. }
             | RawItem::Init(_)
             | RawItem::Comp(_)
             | RawItem::Override { .. } => None,
@@ -529,6 +544,7 @@ fn is_overridden_rule_or_fact(item: &RawItem, overrides: &HashMap<String, (Span,
         | RawItem::Input { .. }
         | RawItem::Output { .. }
         | RawItem::Printsize { .. }
+        | RawItem::Limitsize { .. }
         | RawItem::Init(_)
         | RawItem::Comp(_)
         | RawItem::Override { .. } => return false,
@@ -564,6 +580,7 @@ fn apply_type_env_to_item(item: RawItem, env: &HashMap<String, String>) -> RawIt
         | RawItem::Input { .. }
         | RawItem::Output { .. }
         | RawItem::Printsize { .. }
+        | RawItem::Limitsize { .. }
         | RawItem::Comp(_)
         | RawItem::Override { .. }) => other,
     }

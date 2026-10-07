@@ -41,6 +41,7 @@ impl Assembler {
                 Rule::input_directive => assembler.input_directives.push(node.lower()?),
                 Rule::output_directive => assembler.output_directives.push(node.lower()?),
                 Rule::printsize_directive => assembler.printsize_directives.push(node.lower()?),
+                Rule::limitsize_directive => assembler.limitsize_directives.push(node.lower()?),
                 Rule::fact => {
                     let head = node.children().lower_next("fact head")?;
                     assembler.raw_facts.push(FlowLogRule::new(head, vec![]));
