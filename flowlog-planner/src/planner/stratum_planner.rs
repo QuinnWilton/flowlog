@@ -1,13 +1,13 @@
 //! Stratum planner that plans a stratum (a group of rules).
 
 use std::collections::BTreeMap;
-use flowlog_common::collections::HashMap;
-use flowlog_common::collections::HashSet;
 use std::fmt;
 use std::mem;
 
 use flowlog_common::SECTION_BAR;
 use flowlog_common::SUBSECTION_BAR;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::AggregationOperator;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::HeadArg;

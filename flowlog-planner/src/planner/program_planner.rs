@@ -51,7 +51,6 @@ impl ProgramPlanner {
 #[cfg(test)]
 mod tests {
     use flowlog_common::collections::HashMap;
-
     use flowlog_common::compute_fp;
 
     use super::*;

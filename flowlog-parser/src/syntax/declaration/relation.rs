@@ -1,10 +1,10 @@
 //! Relation declaration types for FlowLog Datalog programs.
 
-use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 use flowlog_common::compute_fp;
 
 use super::Attribute;

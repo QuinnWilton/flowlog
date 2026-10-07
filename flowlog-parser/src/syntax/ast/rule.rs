@@ -3,12 +3,12 @@
 //! - [`FlowLogRule`]: `head :- p1, p2, ..., pn.`, a single derived head
 //!   and the body predicates that must all hold.
 
-use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::FileId;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 use pest::iterators::Pair;
 
 use super::AtomArg;

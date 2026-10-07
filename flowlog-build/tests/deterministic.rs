@@ -6,7 +6,7 @@
 //! and strata in different orders, and a build is not reproducible.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
 use flowlog_build::Builder;
 use flowlog_common::SourceMap;
@@ -33,7 +33,7 @@ fn program() -> String {
     text
 }
 
-fn compile(dir: &PathBuf, intern: bool) -> String {
+fn compile(dir: &Path, intern: bool) -> String {
     let out = dir.join(format!("out-{}", rand_suffix()));
     fs::create_dir_all(&out).unwrap();
     let mut sm = SourceMap::new();

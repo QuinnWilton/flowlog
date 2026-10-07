@@ -4,11 +4,11 @@
 //! [`InputSource`] is what those mean once the adopting relation fills in the
 //! defaults and the rest is refused.
 
-use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 
 use super::param::parse_delimiter;
 use super::param::parse_io_directive;

@@ -2,7 +2,6 @@
 //! the union of its rule heads with its earlier binding, outside any loop.
 
 use flowlog_common::collections::HashSet;
-
 use flowlog_planner::planner::StratumPlanner;
 use flowlog_planner::planner::aggregate_mutability;
 use flowlog_profiler::PlanGraph;

@@ -18,11 +18,11 @@
 //! relation it reads, so a prelude reads only relations that are complete
 //! and stay so.
 
-use flowlog_common::collections::HashMap;
-use flowlog_common::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use tracing::trace;
 
 use crate::planner::ArithmeticArgument;
@@ -541,7 +541,6 @@ fn greedy_cover(
 #[cfg(test)]
 mod tests {
     use flowlog_common::collections::HashSet;
-
     use flowlog_common::compute_fp;
 
     use crate::planner::ArithmeticArgument;

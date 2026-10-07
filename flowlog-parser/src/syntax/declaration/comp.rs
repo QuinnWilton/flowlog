@@ -3,9 +3,8 @@
 //! unbound type parameters; the inliner resolves them. Inlined and
 //! discarded before typechecking; see [`crate::pipeline::inline`].
 
-use flowlog_common::collections::HashMap;
-
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 
 use crate::Node;
 use crate::Rule;

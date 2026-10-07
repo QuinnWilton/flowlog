@@ -6,11 +6,11 @@
 //!   groups, and tuples)
 //! - [`Arithmetic`]: a left-to-right fold with precedence encoded as groups
 
-use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use super::BuiltinCall;
 use super::BuiltinOperator;

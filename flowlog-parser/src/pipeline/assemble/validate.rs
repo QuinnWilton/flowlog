@@ -1,10 +1,9 @@
 //! Declaration and reference validation, including directive checks and
 //! application to declared relations.
 
+use flowlog_common::Span;
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
-
-use flowlog_common::Span;
 
 use crate::ast::FlowLogRule;
 use crate::ast::Predicate;
@@ -259,7 +258,8 @@ mod tests {
     #[test]
     fn apply_directives_rejects_directive_on_undeclared_relation() {
         // `.output missing_rel` with no matching `.decl`.
-        let output = OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
+        let output =
+            OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
         assert_err!(
             apply_directives(&mut [], vec![], vec![output], vec![]),
             ParseError::UndeclaredInDirective { .. }

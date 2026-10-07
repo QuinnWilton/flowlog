@@ -22,12 +22,12 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use flowlog_common::collections::HashMap;
-use flowlog_common::collections::HashSet;
 use std::fmt;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::Atom;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Mutability;

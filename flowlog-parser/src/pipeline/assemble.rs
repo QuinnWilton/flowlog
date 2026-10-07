@@ -7,9 +7,8 @@ mod inline;
 mod substitute;
 mod validate;
 
-use flowlog_common::collections::HashMap;
-
 use flowlog_common::FileId;
+use flowlog_common::collections::HashMap;
 use pest::Parser;
 
 use crate::FlowLogParser;

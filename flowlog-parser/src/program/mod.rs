@@ -13,10 +13,9 @@
 mod display;
 mod fact;
 
+pub use fact::InlineFact;
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
-
-pub use fact::InlineFact;
 
 use crate::ast::FlowLogRule;
 use crate::declaration::ExternFn;

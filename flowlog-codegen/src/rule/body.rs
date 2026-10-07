@@ -6,7 +6,6 @@
 
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
-
 use flowlog_planner::planner::ArithmeticArgument;
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::FactorArgument;

@@ -62,11 +62,11 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use flowlog_common::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
 
+use flowlog_common::collections::HashMap;
 use flowlog_parser::ComparisonOperator;
 use itertools::Itertools;
 use rustc_hash::FxHasher;
@@ -542,7 +542,8 @@ impl CanonicalForm {
             return None;
         }
         let mut outputs: HashMap<&ArithmeticPos, TransformationArgument> = HashMap::default();
-        let mut columns: HashMap<AtomArgumentSignature, TransformationArgument> = HashMap::default();
+        let mut columns: HashMap<AtomArgumentSignature, TransformationArgument> =
+            HashMap::default();
         for (is_key, exprs) in [(true, &server.key), (false, &server.value)] {
             for (index, expr) in exprs.iter().enumerate() {
                 let position = TransformationArgument::KV((is_key, index));

@@ -6,7 +6,6 @@
 //! enters the loop.
 
 use flowlog_common::collections::HashMap;
-
 use flowlog_parser::AggregationOperator;
 use flowlog_parser::Mutability;
 use flowlog_planner::planner::StratumPlanner;

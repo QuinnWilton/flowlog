@@ -9,10 +9,10 @@
 //! - a head column narrowed (parent to subtype) without an `as()`, and
 //! - an `as()` between types of different primitive roots.
 
-use flowlog_common::collections::HashMap;
 use std::mem;
 
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 
 use crate::Arithmetic;
 use crate::Atom;

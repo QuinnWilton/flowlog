@@ -6,11 +6,11 @@
 //! one of the target's attributes, so only the relation can turn it into a
 //! column index.
 
-use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 
 use super::param::parse_delimiter;
 use super::param::parse_io_directive;

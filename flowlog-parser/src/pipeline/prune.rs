@@ -5,7 +5,6 @@
 
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
-
 use tracing::warn;
 
 use crate::ast::Predicate;

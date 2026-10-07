@@ -29,12 +29,11 @@ mod stratum;
 mod test_harness;
 mod ty;
 
-use flowlog_common::collections::HashMap;
-use flowlog_common::collections::HashSet;
-
 pub use error::CodegenError;
 pub(crate) use expr::term::constant::const_to_token;
 use flowlog_common::Config;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::DataType;
 use flowlog_parser::Mutability;
 use flowlog_parser::Program;

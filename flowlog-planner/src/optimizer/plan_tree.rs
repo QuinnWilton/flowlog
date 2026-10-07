@@ -1,7 +1,7 @@
 //! Plan tree (left-to-right chain) over core atoms for FlowLog Datalog programs.
-use flowlog_common::collections::HashMap;
 use std::fmt;
 
+use flowlog_common::collections::HashMap;
 use tracing::debug;
 
 use crate::catalog::Catalog;
