@@ -414,6 +414,7 @@ dependencies = [
  "codespan-reporting",
  "prettyplease",
  "proc-macro2",
+ "rustc-hash",
  "syn 3.0.6",
  "tempfile",
 ]
