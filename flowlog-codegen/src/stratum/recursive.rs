@@ -5,7 +5,6 @@
 //! each relation's head, the feedback, and the leave.
 
 use flowlog_common::collections::HashMap;
-
 use flowlog_parser::Mutability;
 use flowlog_planner::planner::StratumPlanner;
 use flowlog_profiler::PlanGraph;
@@ -472,7 +471,9 @@ mod tests {
         let mut recursion = Recursion::new(Mutability::Mutable);
         recursion.entered.insert(s, ident("in_s"));
         recursion.variables.insert(s, ident("recursive_s"));
-        recursion.local_fp_to_ident = [(s, ident("recursive_s")), (r, ident("in_r"))].into_iter().collect();
+        recursion.local_fp_to_ident = [(s, ident("recursive_s")), (r, ident("in_r"))]
+            .into_iter()
+            .collect();
 
         let parts = codegen
             .recursive_parts(&recursion, s, &[s, r, 0x7])

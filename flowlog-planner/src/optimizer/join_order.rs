@@ -11,6 +11,7 @@ mod acyclic;
 mod cyclic;
 
 use std::collections::BTreeSet;
+
 use flowlog_common::collections::HashMap;
 
 // =============================================================================

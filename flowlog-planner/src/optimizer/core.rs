@@ -1,5 +1,6 @@
 //! Optimizer for FlowLog Datalog programs.
 use std::collections::BTreeSet;
+
 use flowlog_common::collections::HashMap;
 
 use crate::catalog::Catalog;

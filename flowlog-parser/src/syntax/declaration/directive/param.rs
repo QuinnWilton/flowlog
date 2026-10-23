@@ -3,9 +3,8 @@
 //! way. Every other parameter's meaning is the directive's own business, so
 //! neither borrows the other's resolution.
 
-use flowlog_common::collections::HashMap;
-
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 
 use crate::Node;
 use crate::Rule;

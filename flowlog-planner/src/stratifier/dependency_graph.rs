@@ -1,8 +1,8 @@
 //! Builds dense rule dependency graphs for stratification.
 
 use std::collections::BTreeSet;
-use flowlog_common::collections::HashMap;
 
+use flowlog_common::collections::HashMap;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Predicate;
 

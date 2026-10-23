@@ -6,11 +6,10 @@
 //!   [`DataType`]s, so subtypes are zero-cost compile-time phantom
 //!   types.
 
-use flowlog_common::collections::HashMap;
-use flowlog_common::collections::HashSet;
-
 use flowlog_common::FileId;
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use pest::iterators::Pair;
 
 use super::DataType;

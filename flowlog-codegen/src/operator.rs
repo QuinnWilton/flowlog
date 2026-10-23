@@ -7,7 +7,6 @@
 //! the strata order the operators.
 
 use flowlog_common::collections::HashMap;
-
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::StratumPlanner;
 use flowlog_planner::planner::Transformation;

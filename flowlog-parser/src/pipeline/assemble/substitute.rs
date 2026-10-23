@@ -15,9 +15,8 @@
 //! [`substitute_assignments`] drives [`substitute_rule`] per rule; a rule left
 //! with an empty body becomes a fact in the fold stage.
 
-use flowlog_common::collections::HashSet;
-
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use crate::Arithmetic;
 use crate::Atom;

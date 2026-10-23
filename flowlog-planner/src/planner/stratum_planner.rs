@@ -2,13 +2,13 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use flowlog_common::collections::HashMap;
-use flowlog_common::collections::HashSet;
 use std::fmt;
 use std::mem;
 
 use flowlog_common::SECTION_BAR;
 use flowlog_common::SUBSECTION_BAR;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Mutability;
 use flowlog_parser::Program;

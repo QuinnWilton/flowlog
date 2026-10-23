@@ -3,7 +3,6 @@
 //! lattice column when it has one, outside any loop.
 
 use flowlog_common::collections::HashSet;
-
 use flowlog_parser::Mutability;
 use flowlog_planner::planner::StratumPlanner;
 use flowlog_profiler::PlanGraph;

@@ -7,7 +7,6 @@
 //! operator.
 
 use flowlog_common::collections::HashMap;
-
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::TransformationArgument;
 use flowlog_planner::planner::TransformationFlow;

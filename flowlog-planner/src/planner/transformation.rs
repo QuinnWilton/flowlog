@@ -4,10 +4,10 @@
 //! - `info`: the per-rule description a step is materialized from.
 //! - `flow`: how output columns and filters read the input columns.
 
-use flowlog_common::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+use flowlog_common::collections::HashMap;
 use flowlog_parser::Mutability;
 
 use crate::planner::CanonicalForm;

@@ -5,10 +5,10 @@
 //! collide after conversion. Runtime loaders and emitters convert between
 //! engine storage and these public tuple types.
 
-use flowlog_common::collections::HashMap;
 use std::io;
 
 use flowlog_codegen::user_tuple_tokens;
+use flowlog_common::collections::HashMap;
 use flowlog_parser::Program;
 use flowlog_parser::Relation;
 use proc_macro2::Ident;

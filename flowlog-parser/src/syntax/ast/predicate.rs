@@ -7,8 +7,9 @@
 //!
 //! Predicates form the antecedent of rules: `head(...) :- p1, !p2, X > Y.`
 
-use flowlog_common::collections::HashSet;
 use std::fmt;
+
+use flowlog_common::collections::HashSet;
 
 use super::AggregateExpr;
 use super::Atom;

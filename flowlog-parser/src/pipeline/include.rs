@@ -3,7 +3,6 @@
 //! [`resolve_includes`] inlines every `.include` in a file (and its includes,
 //! transitively) and returns the combined source.
 
-use flowlog_common::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -11,6 +10,7 @@ use std::path::PathBuf;
 use flowlog_common::FileId;
 use flowlog_common::SourceMap;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 use pest::Parser;
 use tracing::debug;
 use tracing::warn;

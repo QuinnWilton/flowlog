@@ -3,11 +3,11 @@
 //! [`ComparisonOperator`] identifies the operation and string negation;
 //! [`ComparisonExpr`] owns both operands and their surface rendering.
 
-use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use super::Arithmetic;
 use crate::Lexeme;

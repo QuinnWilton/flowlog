@@ -3,10 +3,9 @@
 //! directive to the relation it names, and rejects a rule, fact, or
 //! directive naming an undeclared relation.
 
+use flowlog_common::Span;
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
-
-use flowlog_common::Span;
 
 use crate::DataType;
 use crate::ast::FlowLogRule;
@@ -288,7 +287,8 @@ mod tests {
     #[test]
     fn a_directive_on_an_undeclared_relation_is_rejected() {
         // `.output missing_rel` with no matching `.decl`.
-        let output = OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
+        let output =
+            OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
         assert_err!(
             apply_directives(&mut [], vec![], vec![output], vec![]),
             ParseError::UndeclaredInDirective { .. }

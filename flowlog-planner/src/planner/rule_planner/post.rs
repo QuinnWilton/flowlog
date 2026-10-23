@@ -3,7 +3,6 @@
 //! positions.
 
 use flowlog_common::collections::HashMap;
-
 use flowlog_parser::HeadArg;
 use tracing::trace;
 

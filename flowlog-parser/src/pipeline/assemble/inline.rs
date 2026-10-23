@@ -1,10 +1,9 @@
 //! Component expansion, inheritance, and scoped name resolution. Member types
 //! register under instance-qualified names in the shared [`TypeRegistry`].
 
+use flowlog_common::Span;
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
-
-use flowlog_common::Span;
 
 use super::Assembler;
 use crate::Node;
@@ -71,7 +70,13 @@ impl Assembler {
                 // Local directives see only this instance's subtree. References
                 // to other instances are deferred until all declarations exist.
                 let first_relation = self.relations.len();
-                self.inline_instance("", &global_instances, &HashMap::default(), init, first_relation)?;
+                self.inline_instance(
+                    "",
+                    &global_instances,
+                    &HashMap::default(),
+                    init,
+                    first_relation,
+                )?;
             }
         }
         Ok(())

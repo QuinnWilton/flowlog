@@ -22,10 +22,9 @@ mod expr;
 mod fact;
 mod rule;
 
-use flowlog_common::collections::HashMap;
-
 use flowlog_common::Config;
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
 
 use crate::Arithmetic;
 use crate::BuiltinOperator;

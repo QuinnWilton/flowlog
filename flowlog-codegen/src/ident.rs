@@ -23,7 +23,6 @@
 //! [`Relation::raw_name`]: flowlog_parser::Relation::raw_name
 
 use flowlog_common::collections::HashMap;
-
 use proc_macro2::Ident;
 use quote::format_ident;
 
