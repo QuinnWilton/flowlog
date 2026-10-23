@@ -4,10 +4,9 @@
 //! directive naming an undeclared relation. Also resolves each `as()`
 //! target type name against the type registry.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
-
 use flowlog_common::Span;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use crate::Arithmetic;
 use crate::DataType;
@@ -27,7 +26,7 @@ use crate::error::ParseError;
 /// Rejects duplicate names across top-level and component declarations, and
 /// a malformed lattice declaration.
 pub(super) fn check_declarations(relations: &[Relation]) -> Result<(), ParseError> {
-    let mut spans = HashMap::new();
+    let mut spans = HashMap::default();
     for relation in relations {
         if let Some(prior) = spans.insert(relation.name(), relation.span()) {
             return Err(ParseError::DuplicateDecl {
@@ -156,7 +155,7 @@ fn check_duplicate_directives<T>(
     name_of: impl Fn(&T) -> &str,
     get_span: impl Fn(&T) -> Span,
 ) -> Result<(), ParseError> {
-    let mut seen: HashMap<&str, Span> = HashMap::new();
+    let mut seen: HashMap<&str, Span> = HashMap::default();
     for d in dirs {
         let name = name_of(d);
         let span = get_span(d);
@@ -377,7 +376,8 @@ mod tests {
     #[test]
     fn a_directive_on_an_undeclared_relation_is_rejected() {
         // `.output missing_rel` with no matching `.decl`.
-        let output = OutputDirective::new("missing_rel".to_string(), HashMap::new(), Span::DUMMY);
+        let output =
+            OutputDirective::new("missing_rel".to_string(), HashMap::default(), Span::DUMMY);
         assert_err!(
             apply_directives(&mut [], vec![], vec![output], vec![]),
             ParseError::UndeclaredInDirective { .. }

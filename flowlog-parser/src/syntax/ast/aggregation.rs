@@ -5,11 +5,11 @@
 //!   matches of a nested body (e.g., `sum w : { Emp(_, d, w) }`), and the
 //!   variable a rule body binds to it once lowering hoists it
 
-use std::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use super::Arithmetic;
 use super::Atom;

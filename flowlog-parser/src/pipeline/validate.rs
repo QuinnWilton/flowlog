@@ -21,9 +21,9 @@
 //! binders left.
 
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use crate::OutputSink;
 use crate::Relation;
@@ -93,7 +93,7 @@ fn check_aggregate_vars_bound(
         }
         // This aggregate's own variables: a nested aggregate's are checked
         // with it.
-        let mut inside = HashSet::new();
+        let mut inside = HashSet::default();
         if let Some(target) = aggregate.target() {
             inside.extend(target.vars());
         }

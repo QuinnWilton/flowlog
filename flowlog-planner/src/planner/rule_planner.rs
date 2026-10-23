@@ -25,12 +25,12 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::Atom;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Mutability;
@@ -89,7 +89,7 @@ impl RulePlanner {
             rule,
             transformation_infos: Vec::new(),
             transformations: Vec::new(),
-            producer_consumer: HashMap::new(),
+            producer_consumer: HashMap::default(),
             recursive_relations: recursive_relations.iter().copied().collect(),
         }
     }
@@ -141,7 +141,7 @@ impl RulePlanner {
         &mut self,
         mutability_of: &impl Fn(u64) -> Option<Mutability>,
     ) -> Result<(), PlanError> {
-        let mut produced: HashMap<u64, Arc<Collection>> = HashMap::new();
+        let mut produced: HashMap<u64, Arc<Collection>> = HashMap::default();
         self.transformations = self
             .transformation_infos
             .iter()
@@ -210,7 +210,7 @@ impl RulePlanner {
     where
         F: FnMut(&Atom) -> T,
     {
-        let mut out = HashMap::new();
+        let mut out = HashMap::default();
         for atom in self.rule.body_atoms() {
             out.entry(atom.fingerprint())
                 .or_insert_with(|| value_of(atom));
@@ -260,10 +260,10 @@ impl fmt::Display for RulePlanner {
 
         let mut walker = Walker {
             debug_info_map: &debug_map,
-            ids: HashMap::new(),
+            ids: HashMap::default(),
             next_id: 1,
-            expanded: HashSet::new(),
-            stack: HashSet::new(),
+            expanded: HashSet::default(),
+            stack: HashSet::default(),
         };
         let root_uid = walker.get_id(root);
         writeln!(f, "#{}  {}", root_uid, walker.node_title(root))?;

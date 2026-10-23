@@ -3,11 +3,11 @@
 //! [`ComparisonOperator`] identifies the operation and string negation;
 //! [`ComparisonExpr`] owns both operands and their surface rendering.
 
-use std::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use super::Arithmetic;
 use super::Variable;
@@ -461,7 +461,7 @@ mod tests {
             .into_iter()
             .map(ToString::to_string)
             .collect();
-        assert_eq!(vars, HashSet::from(["x".to_string(), "y".to_string()]));
+        assert_eq!(vars, HashSet::from_iter(["x".to_string(), "y".to_string()]));
     }
 
     #[test]
@@ -478,6 +478,6 @@ mod tests {
         .unwrap();
         assert_ne!(first.span(), second.span());
         assert_eq!(first, second);
-        assert_eq!(HashSet::from([first, second]).len(), 1);
+        assert_eq!(HashSet::from_iter([first, second]).len(), 1);
     }
 }

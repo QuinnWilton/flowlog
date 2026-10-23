@@ -2,13 +2,13 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 use std::mem;
 
 use flowlog_common::SECTION_BAR;
 use flowlog_common::SUBSECTION_BAR;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Mutability;
 use flowlog_parser::Program;
@@ -399,7 +399,7 @@ impl StratumPlanner {
         let mut dynamic_fingerprints: HashSet<u64> =
             self.relation_bindings.keys().copied().collect();
 
-        let mut dynamic_indices = HashSet::new();
+        let mut dynamic_indices = HashSet::default();
 
         for (i, transformation) in self.transformations.iter().enumerate() {
             let consumes_dynamic = if transformation.is_unary() {

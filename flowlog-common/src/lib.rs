@@ -1,5 +1,6 @@
 //! Shared primitives for the FlowLog pipeline crates.
 
+pub mod collections;
 mod config;
 mod diag;
 mod fmt;

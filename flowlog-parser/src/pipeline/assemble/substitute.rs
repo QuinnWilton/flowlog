@@ -15,9 +15,8 @@
 //! [`substitute_assignments`] drives [`substitute_rule`] per rule; a rule left
 //! with an empty body becomes a fact in the fold stage.
 
-use std::collections::HashSet;
-
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use crate::Arithmetic;
 use crate::Atom;
@@ -70,7 +69,7 @@ fn substitute_body(
     // later); `order` preserves discovery order so chains resolve correctly.
     // `destructure_filters` holds synthesized `proj(x,i) = field` predicates
     // for tuple destructure fields that were already bound.
-    let mut assignment_idx: HashSet<usize> = HashSet::new();
+    let mut assignment_idx: HashSet<usize> = HashSet::default();
     let mut order: Vec<(Variable, Arithmetic)> = Vec::new();
     let mut destructure_filters: Vec<Predicate> = Vec::new();
     loop {

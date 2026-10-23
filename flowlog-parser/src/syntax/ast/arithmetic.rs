@@ -6,11 +6,11 @@
 //!   groups, and tuples)
 //! - [`Arithmetic`]: a left-to-right fold with precedence encoded as groups
 
-use std::collections::HashSet;
 use std::fmt;
 
 use educe::Educe;
 use flowlog_common::Span;
+use flowlog_common::collections::HashSet;
 
 use super::AggregateExpr;
 use super::BuiltinCall;
@@ -811,7 +811,7 @@ mod tests {
             .into_iter()
             .map(ToString::to_string)
             .collect();
-        assert_eq!(vars, HashSet::from(["x".to_string(), "y".to_string()]));
+        assert_eq!(vars, HashSet::from_iter(["x".to_string(), "y".to_string()]));
     }
 
     #[rstest]

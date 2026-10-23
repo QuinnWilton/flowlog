@@ -9,10 +9,10 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use flowlog_parser::Variable;
 use tracing::trace;
 
@@ -778,7 +778,7 @@ impl RulePlanner {
         PlanError,
     > {
         // Build mapping from variables to RHS signatures for efficient lookup
-        let mut rhs_var_to_sig: HashMap<&Variable, AtomArgumentSignature> = HashMap::new();
+        let mut rhs_var_to_sig: HashMap<&Variable, AtomArgumentSignature> = HashMap::default();
         for sig in rhs_sigs {
             rhs_var_to_sig.insert(catalog.signature_to_variable(sig)?, *sig);
         }

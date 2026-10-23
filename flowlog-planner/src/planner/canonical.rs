@@ -68,11 +68,11 @@
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::collections::HashMap;
 use std::fmt;
 use std::hash::Hash;
 use std::hash::Hasher;
 
+use flowlog_common::collections::HashMap;
 use flowlog_parser::AggregationOperator;
 use flowlog_parser::ComparisonOperator;
 use flowlog_parser::DataType;
@@ -557,7 +557,7 @@ impl CanonicalForm {
                 // `key_order[column]` is the layout's key position the
                 // column holds.
                 let source = AtomSignature::new(true, 0);
-                let mut exprs = HashMap::new();
+                let mut exprs = HashMap::default();
                 for (column, &position) in key_order.iter().enumerate() {
                     let key = &matches_input_kv_layout.key()[position];
                     let signature = key.plain_var().ok_or_else(|| {
@@ -626,7 +626,7 @@ impl CanonicalForm {
                 self.value.len()
             )));
         }
-        let mut exprs = HashMap::new();
+        let mut exprs = HashMap::default();
         for (position, expr) in layout
             .key()
             .iter()
@@ -787,8 +787,9 @@ impl CanonicalForm {
         if !self.same_body(server) {
             return None;
         }
-        let mut outputs: HashMap<&ArithmeticPos, TransformationArgument> = HashMap::new();
-        let mut columns: HashMap<AtomArgumentSignature, TransformationArgument> = HashMap::new();
+        let mut outputs: HashMap<&ArithmeticPos, TransformationArgument> = HashMap::default();
+        let mut columns: HashMap<AtomArgumentSignature, TransformationArgument> =
+            HashMap::default();
         for (is_key, exprs) in [(true, &server.key), (false, &server.value)] {
             for (index, expr) in exprs.iter().enumerate() {
                 let position = TransformationArgument::KV((is_key, index));

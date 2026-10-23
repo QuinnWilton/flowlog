@@ -14,10 +14,9 @@
 mod display;
 mod fact;
 
-use std::collections::HashMap;
-use std::collections::HashSet;
-
 pub use fact::InlineFact;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 
 use crate::ast::FlowLogRule;
 use crate::declaration::ExternFn;
