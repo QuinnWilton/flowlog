@@ -8,7 +8,7 @@ mod inline;
 mod resolve;
 mod substitute;
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_common::FileId;
 use pest::Parser;
@@ -49,7 +49,7 @@ impl Assembler {
     fn new(type_registry: TypeRegistry) -> Self {
         Self {
             type_registry,
-            components: HashMap::new(),
+            components: HashMap::default(),
             relations: Vec::new(),
             rules: Vec::new(),
             udfs: Vec::new(),
@@ -78,7 +78,7 @@ impl Assembler {
         substitute::substitute_assignments(&mut self.rules)?;
         resolve::check_references(&self.relations, &self.rules, &self.raw_facts)?;
 
-        let mut facts = HashMap::new();
+        let mut facts = HashMap::default();
         for raw_fact in self.raw_facts {
             let (name, fact) = InlineFact::from_rule(&raw_fact)?;
             facts.entry(name).or_insert_with(Vec::new).push(fact);

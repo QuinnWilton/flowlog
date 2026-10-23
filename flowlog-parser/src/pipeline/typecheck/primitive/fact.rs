@@ -1,6 +1,6 @@
 //! Check and pin declared fact tuples against their `.decl`.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use crate::InlineFact;
 use crate::ParseError;

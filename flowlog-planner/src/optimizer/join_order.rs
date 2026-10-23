@@ -11,7 +11,7 @@ mod acyclic;
 mod cyclic;
 
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 // =============================================================================
 // JoinKey
@@ -79,7 +79,7 @@ impl AtomKeys {
         let mut atoms: Vec<BTreeSet<&JoinKey>> =
             self.keys.iter().map(|keys| keys.iter().collect()).collect();
         loop {
-            let mut holders: HashMap<&JoinKey, usize> = HashMap::new();
+            let mut holders: HashMap<&JoinKey, usize> = HashMap::default();
             for key in atoms.iter().flatten() {
                 *holders.entry(key).or_default() += 1;
             }
@@ -149,7 +149,7 @@ mod tests {
                         .collect()
                 })
                 .collect(),
-            HashMap::new(),
+            HashMap::default(),
         )
     }
 
@@ -176,7 +176,7 @@ mod tests {
         for &holder in holders {
             keys[holder].insert(JoinKey::Equality(0));
         }
-        AtomKeys::new(keys, HashMap::from([(pair, BTreeSet::from([0]))]))
+        AtomKeys::new(keys, HashMap::from_iter([(pair, BTreeSet::from([0]))]))
     }
 
     #[test]

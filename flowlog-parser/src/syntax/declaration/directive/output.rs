@@ -6,7 +6,7 @@
 //! one of the target's attributes, so only the relation can turn it into a
 //! column index.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use educe::Educe;

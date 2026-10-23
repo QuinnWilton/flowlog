@@ -4,7 +4,7 @@
 //! next: the collections that enter, the feedback variables, the bodies,
 //! each relation's head, the feedback, and the leave.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_parser::Mutability;
 use flowlog_planner::planner::StratumPlanner;
@@ -53,11 +53,11 @@ impl Recursion {
     fn new(mutability: Mutability) -> Self {
         Self {
             mutability,
-            entered: HashMap::new(),
-            arranged: HashMap::new(),
-            variables: HashMap::new(),
-            local_fp_to_ident: HashMap::new(),
-            heads: HashMap::new(),
+            entered: HashMap::default(),
+            arranged: HashMap::default(),
+            variables: HashMap::default(),
+            local_fp_to_ident: HashMap::default(),
+            heads: HashMap::default(),
         }
     }
 
@@ -472,7 +472,7 @@ mod tests {
         let mut recursion = Recursion::new(Mutability::Mutable);
         recursion.entered.insert(s, ident("in_s"));
         recursion.variables.insert(s, ident("recursive_s"));
-        recursion.local_fp_to_ident = [(s, ident("recursive_s")), (r, ident("in_r"))].into();
+        recursion.local_fp_to_ident = [(s, ident("recursive_s")), (r, ident("in_r"))].into_iter().collect();
 
         let parts = codegen
             .recursive_parts(&recursion, s, &[s, r, 0x7])

@@ -9,7 +9,7 @@
 //! - a head column narrowed (parent to subtype) without an `as()`, and
 //! - an `as()` between types of different primitive roots.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::mem;
 
 use flowlog_common::Span;
@@ -59,7 +59,7 @@ fn check_and_lower_rule(
     reg: &TypeRegistry,
     decls: &DeclIds,
 ) -> Result<(), ParseError> {
-    let mut bindings: Bindings = HashMap::new();
+    let mut bindings: Bindings = HashMap::default();
 
     // Bind via positive atoms first, aggregate bodies included, so
     // out-of-order body predicates can resolve their variables.

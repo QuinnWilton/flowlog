@@ -1,6 +1,6 @@
 //! Optimizer for FlowLog Datalog programs.
 use std::collections::BTreeSet;
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use crate::catalog::Catalog;
 use crate::optimizer::join_order;
@@ -27,7 +27,7 @@ impl Optimizer {
     /// Create an empty optimizer instance.
     pub fn new() -> Self {
         Self {
-            relation_cardinality: HashMap::new(),
+            relation_cardinality: HashMap::default(),
         }
     }
 
@@ -93,7 +93,7 @@ impl Optimizer {
             .iter()
             .map(|vars| vars.iter().cloned().map(JoinKey::Variable).collect())
             .collect();
-        let mut fusable: HashMap<(usize, usize), BTreeSet<usize>> = HashMap::new();
+        let mut fusable: HashMap<(usize, usize), BTreeSet<usize>> = HashMap::default();
         for a in 0..variables.len() {
             for b in a + 1..variables.len() {
                 if !variables[a].is_disjoint(&variables[b]) {

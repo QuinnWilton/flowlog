@@ -5,7 +5,7 @@
 //! projection, joins, and aggregates. This module provides the core
 //! abstractions for building and executing data transformation pipelines.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::fmt;
 use std::slice;
 use std::sync::Arc;

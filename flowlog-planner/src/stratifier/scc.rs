@@ -28,7 +28,7 @@
 //! the size of the graph.
 
 use std::collections::BTreeSet;
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 
 use crate::stratifier::dependency_graph::DependencyGraph;
 

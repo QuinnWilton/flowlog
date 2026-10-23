@@ -22,7 +22,7 @@ mod expr;
 mod fact;
 mod rule;
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_common::Config;
 use flowlog_common::Span;

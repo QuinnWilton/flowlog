@@ -7,7 +7,7 @@
 //!
 //! Predicates form the antecedent of rules: `head(...) :- p1, !p2, X > Y.`
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 use std::fmt;
 
 use super::AggregateExpr;
@@ -38,7 +38,7 @@ pub enum Predicate {
 /// variable. Variables of the aggregates' own bodies are bound there, not
 /// here.
 pub(super) fn bound_vars(body: &[Predicate]) -> HashSet<&str> {
-    let mut bound = HashSet::new();
+    let mut bound = HashSet::default();
     for predicate in body {
         match predicate {
             Predicate::PositiveAtom(atom) => bound.extend(atom.vars()),

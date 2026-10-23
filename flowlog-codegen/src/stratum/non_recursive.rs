@@ -2,7 +2,7 @@
 //! the union of its rule heads with its earlier binding, merged by its
 //! lattice column when it has one, outside any loop.
 
-use std::collections::HashSet;
+use flowlog_common::collections::HashSet;
 
 use flowlog_parser::Mutability;
 use flowlog_planner::planner::StratumPlanner;

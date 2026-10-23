@@ -2,7 +2,7 @@
 //! rule head, resolving head variables and arithmetic into output
 //! positions.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_parser::HeadArg;
 use tracing::trace;

@@ -6,7 +6,7 @@
 //! relation's. The closures' pieces come from [`expr`](crate::expr), and
 //! the strata order the operators.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::StratumPlanner;

@@ -4,7 +4,7 @@
 //! [`InputSource`] is what those mean once the adopting relation fills in the
 //! defaults and the rest is refused.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 use std::fmt;
 
 use educe::Educe;

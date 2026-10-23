@@ -6,7 +6,7 @@
 //! given as the aggregation allows, so nothing here depends on the
 //! operator.
 
-use std::collections::HashMap;
+use flowlog_common::collections::HashMap;
 
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::TransformationArgument;

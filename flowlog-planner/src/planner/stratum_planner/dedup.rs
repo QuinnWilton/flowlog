@@ -20,8 +20,8 @@
 //! relation it reads, so a prelude reads only relations that are complete
 //! and stay so.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use flowlog_common::collections::HashMap;
+use flowlog_common::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
@@ -89,7 +89,7 @@ impl StratumPlanner {
     /// `docs/design/mutability.md`, "Sharing collections by canonical
     /// form").
     fn merge_equal(&mut self, preludes: &[Transformation]) {
-        let mut first: HashMap<(&CanonicalForm, bool), &Arc<Collection>> = HashMap::new();
+        let mut first: HashMap<(&CanonicalForm, bool), &Arc<Collection>> = HashMap::default();
         for tx in preludes {
             first
                 .entry((tx.output().canonical(), tx.need_arrange()))
@@ -167,14 +167,14 @@ impl StratumPlanner {
         let heads: HashSet<u64> = self.idb_to_heads_map.values().flatten().copied().collect();
         // Readers by input fingerprint, as indices into this stratum's own
         // transformations; a prelude reads nothing of this stratum.
-        let mut readers: HashMap<u64, Vec<usize>> = HashMap::new();
+        let mut readers: HashMap<u64, Vec<usize>> = HashMap::default();
         for (reader, tx) in self.transformations.iter().enumerate() {
             for input in tx.input_fingerprints() {
                 readers.entry(input).or_default().push(reader);
             }
         }
         let own = |member: usize| member.checked_sub(preludes.len());
-        let mut aliased: HashSet<usize> = HashSet::new();
+        let mut aliased: HashSet<usize> = HashSet::default();
         for group in self.body_groups(preludes) {
             let members: HashSet<usize> = group.iter().filter_map(|&member| own(member)).collect();
             let needed: Vec<bool> = group
@@ -308,7 +308,7 @@ impl StratumPlanner {
     /// forms, which sharing never changes.
     fn body_groups(&self, preludes: &[Transformation]) -> Vec<Vec<usize>> {
         let count = preludes.len() + self.transformations.len();
-        let mut by_hash: HashMap<u64, Vec<Vec<usize>>> = HashMap::new();
+        let mut by_hash: HashMap<u64, Vec<Vec<usize>>> = HashMap::default();
         for index in 0..count {
             let form = self.member(preludes, index).output().canonical();
             let bucket = by_hash.entry(form.body_hash()).or_default();
@@ -554,7 +554,7 @@ impl StratumPlanner {
             .map(|tx| tx.output().fingerprint())
             .collect();
         let count = self.transformations.len();
-        let mut produced = HashSet::new();
+        let mut produced = HashSet::default();
         let mut placed = vec![false; count];
         let mut order = Vec::with_capacity(count);
         while order.len() < count {
@@ -669,7 +669,7 @@ fn greedy_cover(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use flowlog_common::collections::HashSet;
 
     use flowlog_common::compute_fp;
 
@@ -709,7 +709,7 @@ mod tests {
             .iter()
             .map(|tx| tx.output().fingerprint())
             .collect();
-        let mut produced = HashSet::new();
+        let mut produced = HashSet::default();
         stratum.non_recursive_transformations().iter().all(|tx| {
             let ready = tx
                 .input_fingerprints()
