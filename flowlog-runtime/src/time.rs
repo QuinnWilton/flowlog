@@ -38,7 +38,12 @@ pub type Once = ();
 pub type Epoch = u32;
 
 /// A loop's iteration counter.
-pub type Iteration = u16;
+///
+/// A path past the counter's last value leads nowhere, so timely drops the
+/// update and the loop stops short of its fixpoint without an error. A
+/// `u16` did that at 65,536 rounds, which a chain of rows one step apart
+/// reaches; a `u32` puts the cut beyond any loop that finishes in practice.
+pub type Iteration = u32;
 
 /// The time of a static loop in an engine that runs once.
 pub type OnceLoop = Product<Once, Iteration>;
@@ -166,6 +171,7 @@ mod tests {
     #[rstest]
     #[case(LexLoop::NEXT_ITERATION, at(3, 4), Some(at(3, 5)))]
     #[case(at(1, 0), at(3, 4), Some(at(4, 4)))]
+    #[case(LexLoop::NEXT_ITERATION, at(3, 65_535), Some(at(3, 65_536)))]
     #[case(LexLoop::NEXT_ITERATION, at(3, Iteration::MAX), None)]
     fn a_summary_advances_each_coordinate(
         #[case] summary: LexLoop,
