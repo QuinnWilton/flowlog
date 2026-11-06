@@ -7,6 +7,7 @@
 //! operator.
 
 use flowlog_common::collections::HashMap;
+use flowlog_planner::planner::ArithmeticArgument;
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::TransformationArgument;
 use flowlog_planner::planner::TransformationFlow;
@@ -23,11 +24,13 @@ use syn::Index;
 use super::Operator;
 use super::arranged_input;
 use super::keyed_output;
+use super::map::combine_predicates;
 use super::map::flat_map_body_tokens;
 use super::register_arrangement;
 use crate::Codegen;
 use crate::CodegenError;
 use crate::expr::aggregation::aggregation_kind;
+use crate::expr::guard::compare_operands;
 use crate::expr::param::kv_params;
 use crate::ident::find_local_ident;
 use crate::ty::data::KvTypes;
@@ -121,7 +124,13 @@ impl Codegen {
         } else {
             value_expr
         };
-        let pred = self.kv_compare_predicate(compares, si, &answer_row)?;
+        let projected: &[ArithmeticArgument] = if arrange.is_some() { key } else { &[] };
+        let evaluated = compare_operands(compares)
+            .chain(projected)
+            .chain(value.iter());
+        let guard = self.kv_guard(evaluated, si, &answer_row)?;
+        let compare = self.kv_compare_predicate(compares, si, &answer_row)?;
+        let pred = combine_predicates([guard, compare]);
 
         with_plan_graph(plan_graph, |plan_graph| {
             let inputs = std::iter::once(&rows)

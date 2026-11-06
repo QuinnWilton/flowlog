@@ -23,6 +23,7 @@
 //! | [`intern`] | Thread-safe string interning pool |
 //! | [`operators`] | Named dataflow operators used by generated rules |
 //! | [`arith`] | Arithmetic operators whose semantics FlowLog defines itself |
+//! | [`builtin`] | Where the partial built-in functions are defined |
 //! | [`time`] | Engine and loop timestamps |
 //! | [`txn`] | Transaction state types shared with incremental drivers |
 //!
@@ -33,6 +34,7 @@
 #[cfg(feature = "cli")]
 mod args;
 pub mod arith;
+pub mod builtin;
 pub mod diff;
 pub mod error;
 mod failure;

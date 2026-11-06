@@ -19,13 +19,15 @@ use crate::types::DataType;
 pub enum BuiltinOperator {
     /// `strlen(s) -> int32`: character count.
     Strlen,
-    /// `substr(s, start, len) -> string`: character-indexed slice.
+    /// `substr(s, start, len) -> string`: character-indexed slice; partial,
+    /// over the domain `flowlog_runtime::builtin::substr_defined` gives.
     Substr,
     /// `ord(s) -> int32`: Souffle symbol ordinal; requires `--str-intern`.
     Ord,
     /// `to_string(n) -> string`: renders any numeric or bool scalar.
     ToString,
-    /// `to_number(s) -> int32`: 0 on parse failure.
+    /// `to_number(s) -> int32`: `s` read as a number; partial, over the
+    /// domain `flowlog_runtime::builtin::to_number_defined` gives.
     ToNumber,
     /// `cat(a, b) -> string`: binary string concatenation.
     Cat,

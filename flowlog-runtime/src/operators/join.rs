@@ -134,8 +134,9 @@ where
 // =============================================================================
 
 /// Emits every `source` pair whose key is absent from `filter`, mapped
-/// through `logic`, under the name FlowLog gives the step. As with
-/// [`flowlog_join`], two pairs `logic` maps to one row each emit it.
+/// through `logic`, under the name FlowLog gives the step; a pair `logic`
+/// maps to `None` emits nothing. As with [`flowlog_join`], two pairs
+/// `logic` maps to one row each emit it.
 ///
 /// Both arms are encoded as signed membership updates so matching pairs
 /// cancel, then survivors are decoded to the output weight and only then
@@ -180,7 +181,7 @@ where
     R: AntijoinOutput<Tr1::Time> + ExchangeData + Semigroup,
     (KC::Owned, BatchValOwn<Tr2>): ExchangeData + Hashable,
     D: Data,
-    L: FnMut((KC::Owned, BatchValOwn<Tr2>)) -> D + 'static,
+    L: FnMut((KC::Owned, BatchValOwn<Tr2>)) -> Option<D> + 'static,
     VecCollection<'scope, Tr1::Time, (KC::Owned, BatchValOwn<Tr2>), diff::Mutable>: FlowlogDedup,
 {
     // Both arms must cancel on the same datum, so each rebuilds the owned
@@ -216,7 +217,7 @@ where
     // merges many pairs into one row.
     let survivors = R::decode(positive.concat(negative));
     flowlog_map(survivors, name, move |data, t, d| {
-        std::iter::once((logic(data), t, d))
+        logic(data).map(|row| (row, t, d))
     })
 }
 
@@ -444,7 +445,7 @@ mod tests {
                     keys.arrange_by_self(),
                     rows.arrange_by_key(),
                     "Antijoin",
-                    |row| row,
+                    Some,
                 )
                 .inspect(move |update| seen.borrow_mut().push(*update))
                 .probe_with(&probe);
@@ -488,7 +489,7 @@ mod tests {
                     keys.arrange_by_self(),
                     rows.arrange_by_key(),
                     "Antijoin",
-                    |row| row,
+                    Some,
                 )
                 .inspect(move |update| seen.borrow_mut().push(*update))
                 .probe_with(&probe);
@@ -525,7 +526,7 @@ mod tests {
                     keys.arrange_by_self(),
                     rows.arrange_by_key(),
                     "Antijoin",
-                    |(key, val)| (100 / key, val),
+                    |(key, val)| Some((100 / key, val)),
                 )
                 .inspect(move |update| seen.borrow_mut().push(*update))
                 .probe_with(&probe);
@@ -670,7 +671,7 @@ mod tests {
                     flowlog_arrange_self(blocked, "Filter"),
                     flowlog_arrange(source, "Source"),
                     "Antijoin",
-                    |row| row,
+                    Some,
                 )
                 .inspect(move |update| seen.borrow_mut().push(update.clone()))
                 .probe_with(&probe);

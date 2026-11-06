@@ -6,7 +6,10 @@
 //!
 //! Integer `+`, `-`, `*`, `/`, and `%` wrap on overflow whatever the
 //! build: `/` and `%` truncate toward zero, `MIN / -1` wraps to `MIN` and
-//! `MIN % -1` is `0`, and a zero divisor panics. Float arithmetic is IEEE.
+//! `MIN % -1` is `0`, and a zero divisor has no quotient: generated code
+//! tests the divisor first, so a rule has no row where it would divide by
+//! zero, and `div` and `rem` called with one panic. Float arithmetic is
+//! IEEE, a zero divisor included.
 //!
 //! The shifts and `^` follow Souffle. A shift count is masked to the
 //! operand width (`1 bshl 64` is `1 bshl 0` on 64 bits) instead of

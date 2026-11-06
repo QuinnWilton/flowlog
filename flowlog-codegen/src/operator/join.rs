@@ -4,6 +4,7 @@
 //! keyed output is arranged for the joins that read it.
 
 use flowlog_common::collections::HashMap;
+use flowlog_planner::planner::ArithmeticArgument;
 use flowlog_planner::planner::Collection;
 use flowlog_planner::planner::TransformationFlow;
 use flowlog_profiler::PlanGraph;
@@ -15,9 +16,11 @@ use quote::quote;
 use super::Operator;
 use super::arranged_input;
 use super::keyed_output;
+use super::map::combine_predicates;
 use super::register_arrangement;
 use crate::Codegen;
 use crate::CodegenError;
+use crate::expr::guard::compare_operands;
 use crate::expr::param::join_params;
 use crate::expr::param::kv_params;
 use crate::ident::find_local_ident;
@@ -66,8 +69,13 @@ impl Codegen {
         } else {
             value
         };
-        let pred = self.join_compare_predicate(flow.compares(), si, &left_type, &right_type)?;
-        let body = join_body_tokens(pred, out_expr);
+        let key: &[ArithmeticArgument] = if arrange.is_some() { flow.key() } else { &[] };
+        let evaluated = compare_operands(flow.compares())
+            .chain(key)
+            .chain(flow.value().iter());
+        let guard = self.join_guard(evaluated, si, &left_type, &right_type)?;
+        let compare = self.join_compare_predicate(flow.compares(), si, &left_type, &right_type)?;
+        let body = join_body_tokens(combine_predicates([guard, compare]), out_expr);
 
         let arrange_stmt = register_arrangement(arranged_map, output, &out, arrange.as_deref());
         Ok(quote! {
@@ -133,6 +141,9 @@ impl Codegen {
         } else {
             value
         };
+        let key: &[ArithmeticArgument] = if arrange.is_some() { flow.key() } else { &[] };
+        let guard = self.kv_guard(key.iter().chain(flow.value().iter()), si, &input_type)?;
+        let body = join_body_tokens(guard, out_expr);
 
         let arrange_stmt = register_arrangement(arranged_map, output, &out, arrange.as_deref());
         Ok(quote! {
@@ -140,7 +151,7 @@ impl Codegen {
                 #l.clone(),
                 #r.clone(),
                 #literal,
-                |( #anti_k, #anti_v )| #out_expr,
+                |( #anti_k, #anti_v )| { #body },
             );
             #arrange_stmt
         })
@@ -161,9 +172,9 @@ fn arranged_inputs(
     ))
 }
 
-/// Returns the body of a join closure that yields `out`, only when `pred`
-/// holds if there is one. With no predicate the body is a bare `Some`, as
-/// the join operator expects an `Option`, not an iterator.
+/// Returns the body of a join or antijoin closure that yields `out`, only
+/// when `pred` holds if there is one. With no predicate the body is a bare
+/// `Some`, as both operators expect an `Option`, not an iterator.
 fn join_body_tokens(pred: Option<TokenStream>, out: TokenStream) -> TokenStream {
     match pred {
         Some(pred) => quote! { if #pred { Some( #out ) } else { None } },

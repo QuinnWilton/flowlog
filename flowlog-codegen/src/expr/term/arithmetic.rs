@@ -108,7 +108,7 @@ fn arithmetic_step(op: &ArithmeticOperator, lhs: TokenStream, rhs: TokenStream) 
 impl Codegen {
     /// Returns an argument's expression, folding its steps left to right and
     /// lowering each variable it reads through `resolve_var`.
-    pub(super) fn arithmetic_to_token<F>(
+    pub(crate) fn arithmetic_to_token<F>(
         &mut self,
         expr: &ArithmeticArgument,
         string_intern: bool,
@@ -148,7 +148,7 @@ impl Codegen {
     /// delimits, a function argument or the inside of parentheses the
     /// caller adds: [`Self::arithmetic_to_token`]'s, except that a lone group
     /// or cast keeps none of the parentheses it carries as an operand.
-    pub(super) fn arithmetic_to_argument<F>(
+    pub(crate) fn arithmetic_to_argument<F>(
         &mut self,
         expr: &ArithmeticArgument,
         string_intern: bool,
@@ -191,7 +191,7 @@ impl Codegen {
     }
 
     /// Returns a factor as a value expression.
-    fn factor_to_token<F>(
+    pub(crate) fn factor_to_token<F>(
         &mut self,
         factor: &FactorArgument,
         string_intern: bool,
@@ -317,54 +317,24 @@ impl Codegen {
         string_intern: bool,
         input_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
-        self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
-            TransformationArgument::KV((_, idx)) => {
-                let ident = fields.get(*idx).ok_or_else(|| {
-                    CodegenError::internal(format!(
-                        "row index {idx} out of bounds (row arity {})",
-                        fields.len()
-                    ))
-                })?;
-                read_slot(quote! { #ident }, input_type, false, *idx, string_intern)
-            }
-            TransformationArgument::Jn(_) => Err(CodegenError::internal(format!(
-                "join argument {arg:?} in a row expression"
-            ))),
-        })
+        self.arithmetic_to_token(
+            expr,
+            string_intern,
+            &row_variable(fields, string_intern, input_type),
+        )
     }
 
     /// Returns an argument's arithmetic expression inside a key-value
     /// closure, its variables read from the `(k, v)` parameters.
     ///
-    /// Also accepts join arguments, reading only their `is_key`: an
-    /// antijoin is planned as a join, so its arguments are `Jn`, but its
-    /// closure sees only the surviving side's `(k, v)`. That is sound
-    /// because an antijoin's output takes its values from the surviving
-    /// side alone, and a key is the same on both sides.
+    /// Also accepts join arguments, as [`kv_variable`] does.
     pub(crate) fn kv_arithmetic(
         &mut self,
         expr: &ArithmeticArgument,
         string_intern: bool,
         input_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
-        self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
-            TransformationArgument::KV((is_key, idx))
-            | TransformationArgument::Jn((_, is_key, idx)) => {
-                let i = Index::from(*idx);
-                let side = if *is_key {
-                    quote! { k }
-                } else {
-                    quote! { v }
-                };
-                read_slot(
-                    quote! { #side.#i },
-                    input_type,
-                    *is_key,
-                    *idx,
-                    string_intern,
-                )
-            }
-        })
+        self.arithmetic_to_token(expr, string_intern, &kv_variable(string_intern, input_type))
     }
 
     /// Returns an argument's arithmetic expression inside a join closure,
@@ -377,22 +347,92 @@ impl Codegen {
         left_type: &KvTypes,
         right_type: &KvTypes,
     ) -> Result<TokenStream, CodegenError> {
-        self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
-            TransformationArgument::Jn((is_left, is_key, idx)) => {
-                let i = Index::from(*idx);
-                let (side, types) = match (is_left, is_key) {
-                    (_, true) => (quote! { k }, left_type),
-                    (true, false) => (quote! { lv }, left_type),
-                    (false, false) => (quote! { rv }, right_type),
-                };
-                // Join parameters are references; an expression yields an
-                // owned value, copied or cloned out.
-                read_slot(quote! { #side.#i }, types, *is_key, *idx, string_intern)
-            }
-            TransformationArgument::KV(_) => Err(CodegenError::internal(format!(
-                "key-value argument {arg:?} in a join expression"
-            ))),
-        })
+        self.arithmetic_to_token(
+            expr,
+            string_intern,
+            &join_variable(string_intern, left_type, right_type),
+        )
+    }
+}
+
+/// Returns how a row closure reads a variable: from the row pattern's
+/// `fields`, whose columns are `input_type`'s values.
+pub(crate) fn row_variable<'a>(
+    fields: &'a [Ident],
+    string_intern: bool,
+    input_type: &'a KvTypes,
+) -> impl Fn(&TransformationArgument) -> Result<TokenStream, CodegenError> + 'a {
+    move |arg| match arg {
+        TransformationArgument::KV((_, idx)) => {
+            let ident = fields.get(*idx).ok_or_else(|| {
+                CodegenError::internal(format!(
+                    "row index {idx} out of bounds (row arity {})",
+                    fields.len()
+                ))
+            })?;
+            read_slot(quote! { #ident }, input_type, false, *idx, string_intern)
+        }
+        TransformationArgument::Jn(_) => Err(CodegenError::internal(format!(
+            "join argument {arg:?} in a row expression"
+        ))),
+    }
+}
+
+/// Returns how a key-value closure reads a variable: from its `(k, v)`
+/// parameters, typed by `input_type`.
+///
+/// Also accepts join arguments, reading only their `is_key`: an antijoin
+/// is planned as a join, so its arguments are `Jn`, but its closure sees
+/// only the surviving side's `(k, v)`. That is sound because an
+/// antijoin's output takes its values from the surviving side alone, and
+/// a key is the same on both sides.
+pub(crate) fn kv_variable(
+    string_intern: bool,
+    input_type: &KvTypes,
+) -> impl Fn(&TransformationArgument) -> Result<TokenStream, CodegenError> + '_ {
+    move |arg| match arg {
+        TransformationArgument::KV((is_key, idx))
+        | TransformationArgument::Jn((_, is_key, idx)) => {
+            let i = Index::from(*idx);
+            let side = if *is_key {
+                quote! { k }
+            } else {
+                quote! { v }
+            };
+            read_slot(
+                quote! { #side.#i },
+                input_type,
+                *is_key,
+                *idx,
+                string_intern,
+            )
+        }
+    }
+}
+
+/// Returns how a join closure reads a variable: from its `(k, lv, rv)`
+/// bindings, the key and the left values typed by `left_type`, the right
+/// values by `right_type`.
+pub(crate) fn join_variable<'a>(
+    string_intern: bool,
+    left_type: &'a KvTypes,
+    right_type: &'a KvTypes,
+) -> impl Fn(&TransformationArgument) -> Result<TokenStream, CodegenError> + 'a {
+    move |arg| match arg {
+        TransformationArgument::Jn((is_left, is_key, idx)) => {
+            let i = Index::from(*idx);
+            let (side, types) = match (is_left, is_key) {
+                (_, true) => (quote! { k }, left_type),
+                (true, false) => (quote! { lv }, left_type),
+                (false, false) => (quote! { rv }, right_type),
+            };
+            // Join parameters are references; an expression yields an
+            // owned value, copied or cloned out.
+            read_slot(quote! { #side.#i }, types, *is_key, *idx, string_intern)
+        }
+        TransformationArgument::KV(_) => Err(CodegenError::internal(format!(
+            "key-value argument {arg:?} in a join expression"
+        ))),
     }
 }
 

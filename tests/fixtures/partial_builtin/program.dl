@@ -1,0 +1,28 @@
+// ============================================================================
+// Suite   : partial_builtin
+// Feature : `to_number` and `substr` have no value outside their
+//           domains, so a rule derives no row from such a binding
+// Covers  : `to_number` of text that does not parse as an int32 (letters,
+//           out of range), in a head and in a comparison; `substr` with a
+//           start past the end, a negative start or length, and a
+//           negative literal start; a length past the end takes the rest
+// ============================================================================
+
+.decl Text(s: symbol, start: int32, len: int32)
+.input Text(IO="file", filename="Text.csv", delimiter=",")
+
+.decl Number(s: symbol, n: int32)
+Number(s, to_number(s)) :- Text(s, _, _).
+.output Number
+
+.decl Positive(s: symbol)
+Positive(s) :- Text(s, _, _), to_number(s) > 0.
+.output Positive
+
+.decl Slice(s: symbol, start: int32, len: int32, t: symbol)
+Slice(s, start, len, substr(s, start, len)) :- Text(s, start, len).
+.output Slice
+
+.decl Never(s: symbol, t: symbol)
+Never(s, substr(s, -1, 2)) :- Text(s, _, _).
+.output Never

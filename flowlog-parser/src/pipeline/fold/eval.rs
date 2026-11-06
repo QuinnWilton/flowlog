@@ -23,8 +23,8 @@ pub(super) fn eval_arith(op: &ArithmeticOperator, a: &Constant, b: &Constant) ->
     // Fold only where the value is the one the runtime's `arith` computes,
     // so a folded value never diverges from it: integers use `checked_*`
     // (overflow and divide/modulo-by-zero yield `None`, leaving `arith` to
-    // wrap or panic), floats use raw `f32`/`f64` (inf/NaN on
-    // divide-by-zero).
+    // wrap, or the step's domain guard to drop the row), floats use raw
+    // `f32`/`f64` (inf/NaN on divide-by-zero).
     //
     // The shifts and `^` are not folded. Their count masking and exponent
     // rules are owned by `flowlog_runtime::arith`, and this crate cannot
@@ -268,8 +268,8 @@ mod tests {
         Some(c(DataType::Int32, "10"))
     )]
     // Overflow and divide/modulo-by-zero bail to None: leaving the expression
-    // unfolded lets the release build reproduce the wrapping value or preserve
-    // the runtime panic.
+    // unfolded lets the release build reproduce the wrapping value, or derive
+    // no row where it would divide by zero.
     #[case::add_overflow(
         ArithmeticOperator::Plus,
         c(DataType::Int8, "100"),

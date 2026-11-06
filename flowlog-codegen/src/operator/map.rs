@@ -22,6 +22,7 @@ use crate::Codegen;
 use crate::CodegenError;
 use crate::expr::constraint::kv_constraint_predicate;
 use crate::expr::constraint::row_constraint_predicate;
+use crate::expr::guard::compare_operands;
 use crate::expr::param::kv_params;
 use crate::expr::param::row_params;
 use crate::ident::find_local_ident;
@@ -85,7 +86,7 @@ impl Codegen {
             flow.constraints(),
         );
         let out_val = self.row_projection(flow.value(), &row_fields, si, &input_type)?;
-        let pred = self.row_predicate(flow, &row_fields, si, &input_type)?;
+        let pred = self.row_predicate(flow, projected, &row_fields, si, &input_type)?;
 
         with_plan_graph(plan_graph, |plan_graph| {
             if is_alias {
@@ -177,7 +178,8 @@ impl Codegen {
             self.row_projection(flow.key(), &row_fields, si, &input_type)?,
             self.row_projection(flow.value(), &row_fields, si, &input_type)?,
         );
-        let pred = self.row_predicate(flow, &row_fields, si, &input_type)?;
+        let projected = flow.key().iter().chain(flow.value().iter());
+        let pred = self.row_predicate(flow, projected, &row_fields, si, &input_type)?;
 
         // An identity projection into a key-only arrangement aliases
         // the input, which the arrangement then reads directly.
@@ -249,7 +251,9 @@ impl Codegen {
         } else {
             value
         };
-        let pred = self.kv_predicate(flow, si, &input_type)?;
+        let key: &[ArithmeticArgument] = if arrange.is_some() { flow.key() } else { &[] };
+        let pred =
+            self.kv_predicate(flow, key.iter().chain(flow.value().iter()), si, &input_type)?;
 
         with_plan_graph(plan_graph, |plan_graph| {
             let inputs = vec![inp.to_string()];
@@ -276,31 +280,38 @@ impl Codegen {
     }
 
     /// Returns a step's filter over rows, `fields` naming the columns
-    /// `flow` reads: its constraints and comparisons joined with `&&`, or
-    /// `None` when it has neither.
-    fn row_predicate(
+    /// `flow` reads: its constraints, the domain guard of its comparisons
+    /// and the `projected` expressions it emits, and its comparisons,
+    /// joined with `&&`, or `None` when it has none of them.
+    fn row_predicate<'a>(
         &mut self,
-        flow: &TransformationFlow,
+        flow: &'a TransformationFlow,
+        projected: impl IntoIterator<Item = &'a ArithmeticArgument>,
         fields: &[Ident],
         si: bool,
         input_type: &KvTypes,
     ) -> Result<Option<TokenStream>, CodegenError> {
         let constraint = row_constraint_predicate(flow.constraints(), fields, si)?;
+        let evaluated = compare_operands(flow.compares()).chain(projected);
+        let guard = self.row_guard(evaluated, fields, si, input_type)?;
         let compare = self.row_compare_predicate(flow.compares(), fields, si, input_type)?;
-        Ok(combine_predicates(constraint, compare))
+        Ok(combine_predicates([constraint, guard, compare]))
     }
 
-    /// Returns a step's filter over key-value pairs: its constraints and
-    /// comparisons joined with `&&`, or `None` when it has neither.
-    fn kv_predicate(
+    /// Returns a step's filter over key-value pairs, as
+    /// [`Self::row_predicate`] does.
+    fn kv_predicate<'a>(
         &mut self,
-        flow: &TransformationFlow,
+        flow: &'a TransformationFlow,
+        projected: impl IntoIterator<Item = &'a ArithmeticArgument>,
         si: bool,
         input_type: &KvTypes,
     ) -> Result<Option<TokenStream>, CodegenError> {
         let constraint = kv_constraint_predicate(flow.constraints(), si)?;
+        let evaluated = compare_operands(flow.compares()).chain(projected);
+        let guard = self.kv_guard(evaluated, si, input_type)?;
         let compare = self.kv_compare_predicate(flow.compares(), si, input_type)?;
-        Ok(combine_predicates(constraint, compare))
+        Ok(combine_predicates([constraint, guard, compare]))
     }
 }
 
@@ -335,18 +346,19 @@ pub(super) fn flat_map_body_tokens(pred: Option<TokenStream>, out: TokenStream) 
     }
 }
 
-/// Returns the predicates joined as `constraint && compare`, or the one
-/// there is, or `None` when there is neither. The constraint goes first so
-/// that `&&` skips a comparison such as `a / b > 1` on a row the atom's
-/// constants rule out, where `b` may be zero.
-fn combine_predicates(
-    constraint: Option<TokenStream>,
-    compare: Option<TokenStream>,
+/// Returns the predicates there are joined with `&&` in the order given,
+/// a lone one bare, or `None` when there is none. A step passes its
+/// constraint, its domain guard, then its comparisons, so that `&&` skips
+/// a comparison such as `a / b > 1` on a row whose `b` is zero, or that
+/// the atom's constants rule out.
+pub(super) fn combine_predicates<const N: usize>(
+    predicates: [Option<TokenStream>; N],
 ) -> Option<TokenStream> {
-    match (constraint, compare) {
-        (Some(constraint), Some(compare)) => Some(quote! { (#constraint) && (#compare) }),
-        (Some(one), None) | (None, Some(one)) => Some(one),
-        (None, None) => None,
+    let present: Vec<TokenStream> = predicates.into_iter().flatten().collect();
+    match present.as_slice() {
+        [] => None,
+        [one] => Some(one.clone()),
+        many => Some(quote! { #( (#many) )&&* }),
     }
 }
 
@@ -410,22 +422,31 @@ mod tests {
         assert!(!is_identity_row_projection(&[sum], 1));
     }
 
-    /// Two predicates join with `&&`, the constraint first; one stands
-    /// alone, and none is none.
-    // Cases: constraint, compare, joined.
+    /// Predicates join with `&&` in the order given; one stands alone, and
+    /// none is none.
+    // Cases: constraint, guard, compare, joined.
     #[rstest]
-    #[case::both(Some(quote! { b }), Some(quote! { a }), Some("(b) && (a)"))]
-    #[case::constraint_only(Some(quote! { b }), None, Some("b"))]
-    #[case::compare_only(None, Some(quote! { a }), Some("a"))]
-    #[case::neither(None, None, None)]
+    #[case::all(
+        Some(quote! { c }),
+        Some(quote! { g }),
+        Some(quote! { a }),
+        Some("(c) && (g) && (a)")
+    )]
+    #[case::constraint_and_compare(Some(quote! { c }), None, Some(quote! { a }), Some("(c) && (a)"))]
+    #[case::guard_and_compare(None, Some(quote! { g }), Some(quote! { a }), Some("(g) && (a)"))]
+    #[case::constraint_only(Some(quote! { c }), None, None, Some("c"))]
+    #[case::guard_only(None, Some(quote! { g }), None, Some("g"))]
+    #[case::compare_only(None, None, Some(quote! { a }), Some("a"))]
+    #[case::neither(None, None, None, None)]
     fn predicates_join_with_and_skipping_absent_ones(
         #[case] constraint: Option<TokenStream>,
+        #[case] guard: Option<TokenStream>,
         #[case] compare: Option<TokenStream>,
         #[case] joined: Option<&str>,
     ) {
         assert_eq!(
-            combine_predicates(constraint, compare).map(|p| p.to_string()),
-            joined.map(str::to_string)
+            combine_predicates([constraint, guard, compare]).map(|p| p.to_string()),
+            joined.map(|j| j.parse::<TokenStream>().expect("tokens").to_string())
         );
     }
 }

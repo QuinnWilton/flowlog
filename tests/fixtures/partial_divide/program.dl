@@ -1,0 +1,58 @@
+// ============================================================================
+// Suite   : partial_divide
+// Feature : integer `/` and `%` have no value for a zero divisor, so a
+//           rule derives no row from a binding that divides by zero
+// Covers  : a head, a comparison written before the atom that binds it, a
+//           join, a negation's projection, an aggregate's braces, a
+//           lattice head, a divisor that itself divides, and a literal
+//           zero divisor; a float divides by zero as IEEE does
+// ============================================================================
+
+.decl Pair(a: int32, b: int32)
+.input Pair(IO="file", filename="Pair.csv", delimiter=",")
+
+.decl Skip(a: int32)
+.input Skip(IO="file", filename="Skip.csv", delimiter=",")
+
+.decl Real(x: f64, y: f64)
+.input Real(IO="file", filename="Real.csv", delimiter=",")
+
+.decl Quotient(a: int32, b: int32, q: int32)
+Quotient(a, b, a / b) :- Pair(a, b).
+.output Quotient
+
+.decl Remainder(a: int32, b: int32, r: int32)
+Remainder(a, b, a % b) :- Pair(a, b).
+.output Remainder
+
+.decl Above(a: int32, b: int32)
+Above(a, b) :- a / b > 1, Pair(a, b).
+.output Above
+
+.decl Chain(a: int32, c: int32, q: int32)
+Chain(a, c, a / c) :- Pair(a, b), Pair(b, c).
+.output Chain
+
+.decl Kept(a: int32, q: int32)
+Kept(a, 100 / b) :- Pair(a, b), !Skip(a).
+.output Kept
+
+.decl Total(t: int32)
+Total(t) :- t = sum q : { Pair(a, b), q = a / b }.
+.output Total
+
+.decl Least(k: int32, q: min<int32>)
+Least(0, 12 / b) :- Pair(_, b).
+.output Least
+
+.decl Nested(a: int32, b: int32, q: int32)
+Nested(a, b, a / (b / 2)) :- Pair(a, b).
+.output Nested
+
+.decl Never(a: int32, q: int32)
+Never(a, a % 0) :- Pair(a, _).
+.output Never
+
+.decl RealQuotient(x: f64, y: f64, q: f64)
+RealQuotient(x, y, x / y) :- Real(x, y).
+.output RealQuotient

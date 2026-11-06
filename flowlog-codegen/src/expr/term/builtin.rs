@@ -73,8 +73,10 @@ impl Codegen {
                 Ok(emit_string(quote! { #receiver.to_string() }, string_intern))
             }
             BuiltinOperator::ToNumber => {
-                // 0 on parse failure keeps the function total; Souffle
-                // leaves that case unspecified.
+                // The step's domain guard drops a row whose text does not
+                // parse before this runs (`crate::expr::guard`), so the
+                // fallback is never taken; it keeps the expression free of
+                // a panic path should a guard ever be missing.
                 let [s] = self.value_operands(op, args, string_intern, resolve_var)?;
                 let s = as_str(&s, string_intern);
                 Ok(quote! { #s.parse::<i32>().unwrap_or(0) })
@@ -188,7 +190,7 @@ pub(super) fn lowers_to_cast(op: BuiltinOperator) -> bool {
 }
 
 /// Returns `arg`'s value if it is a bare non-negative integer literal.
-fn index_literal(arg: &ArithmeticArgument) -> Option<usize> {
+pub(crate) fn index_literal(arg: &ArithmeticArgument) -> Option<usize> {
     match &arg.init {
         FactorArgument::Const(c) if arg.rest.is_empty() => c.text().parse().ok(),
         _ => None,
@@ -197,7 +199,7 @@ fn index_literal(arg: &ArithmeticArgument) -> Option<usize> {
 
 /// Returns a built-in's `N` operands, or an internal error when the call
 /// does not have exactly `N`; the parser enforces each built-in's arity.
-fn operands<const N: usize>(
+pub(crate) fn operands<const N: usize>(
     op: BuiltinOperator,
     operands: &[ArithmeticArgument],
 ) -> Result<&[ArithmeticArgument; N], CodegenError> {
