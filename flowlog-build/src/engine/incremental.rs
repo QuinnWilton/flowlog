@@ -5,10 +5,17 @@
 //! runtime in per-relation call order before advancing the epoch. A static
 //! relation offers only inserts, staged before the first commit, which
 //! loads them and closes the relation's input.
+//!
+//! A relation held to a number of rows (`.limitsize`) is counted as it is
+//! derived (`flowlog_codegen`'s `limit`); once one outgrows its budget,
+//! every worker stops stepping, and the commit reports it rather than
+//! returning results. The epoch is then left part way, so every later
+//! commit reports the same stop.
 
 use flowlog_codegen::Skeleton;
 use flowlog_codegen::input_field_ident;
 use flowlog_codegen::input_handle_ident;
+use flowlog_codegen::limited_relations;
 use flowlog_codegen::output_emitter_ident;
 use flowlog_codegen::relation_marker_ident;
 use flowlog_codegen::user_tuple_tokens;
@@ -93,17 +100,41 @@ pub(crate) fn gen_lib_incremental_engine(
             ///
             /// # Panics
             ///
+            /// Panics if no transaction is active, or if a relation outgrows
+            /// the rows its `.limitsize` holds it to; `try_commit` reports
+            /// that instead.
+            pub fn commit(&mut self) -> IncrementalResults {
+                match self.try_commit() {
+                    Ok(results) => results,
+                    Err(exceeded) => panic!("{exceeded}"),
+                }
+            }
+
+            /// Applies staged updates as one epoch and returns output
+            /// deltas, or the relation that outgrew the rows its
+            /// `.limitsize` holds it to, which stopped the epoch part way.
+            /// A stopped epoch never completes, so once one is stopped,
+            /// every later commit is refused with the same relation and
+            /// applies nothing.
+            ///
+            /// # Panics
+            ///
             /// Panics if no transaction is active. Call `begin()` or stage
             /// an update before committing.
-            pub fn commit(&mut self) -> IncrementalResults {
+            pub fn try_commit(
+                &mut self,
+            ) -> Result<IncrementalResults, ::flowlog_runtime::limit::LimitExceeded> {
                 assert!(
                     self.in_txn,
                     "IncrementalEngine::commit called with no active transaction; \
                      call begin() or stage at least one update first",
                 );
-                let results = { #commit_body };
                 self.in_txn = false;
-                results
+                if let Some(exceeded) = self.limits.exceeded() {
+                    self.clear_staged();
+                    return Err(exceeded);
+                }
+                #commit_body
             }
 
             #staging_methods
@@ -209,6 +240,8 @@ fn gen_engine_struct(
 
             shared_txn: Arc<::std::sync::RwLock<TxnState>>,
             barrier: Arc<::std::sync::Barrier>,
+            /// The rows each limited relation holds, which the workers count.
+            limits: ::flowlog_runtime::limit::Limits,
 
             #(#emitter_fields,)*
 
@@ -292,12 +325,20 @@ fn gen_new_body(
         })
         .collect();
 
+    // In `limited_relations`' order, whose positions the dataflow's
+    // counters index; every relation there has a limit.
+    let budgets = limited_relations(program).into_iter().filter_map(|rel| {
+        let name = rel.raw_name();
+        rel.limitsize().map(|rows| quote! { (#name, #rows) })
+    });
+
     let worker_closure =
         gen_worker_closure(program, non_nullary_edbs, nullary_edbs, skeleton, uses_ord);
 
     quote! {
         let barrier = Arc::new(::std::sync::Barrier::new(workers + 1));
         let shared_txn = Arc::new(::std::sync::RwLock::new(TxnState::default()));
+        let limits = ::flowlog_runtime::limit::Limits::new(&[#(#budgets),*]);
 
         #(#slot_inits)*
         #(#nullary_slot_inits)*
@@ -307,6 +348,7 @@ fn gen_new_body(
         let worker_thread = ::std::thread::spawn({
             let barrier = barrier.clone();
             let shared_txn = shared_txn.clone();
+            let limits = limits.clone();
             #(#slot_clones_for_thread)*
             #emitter_captures
 
@@ -327,6 +369,7 @@ fn gen_new_body(
             #(#slot_struct_inits,)*
             shared_txn,
             barrier,
+            limits,
             #(#emitter_self_inits,)*
             worker_thread: Some(worker_thread),
         }
@@ -446,7 +489,10 @@ fn gen_worker_closure(
                     }
                     TxnAction::Quit => {
                         inputs.close_dynamic();
-                        while probe.less_than(&time_stamp) {
+                        // An epoch a budget stopped is left part way:
+                        // finishing it would derive what the budget
+                        // refused.
+                        while probe.less_than(&time_stamp) && !limits.is_exceeded() {
                             worker.step();
                         }
                         barrier.wait();
@@ -551,11 +597,17 @@ fn gen_commit_body(
         // stay allocated while the engine waits for the next transaction.
         #(#release_rows)*
 
+        // The workers stopped part way: what they published is not the
+        // epoch's output.
+        if let Some(exceeded) = self.limits.exceeded() {
+            return Err(exceeded);
+        }
+
         #(#drain_blocks)*
 
-        IncrementalResults {
+        Ok(IncrementalResults {
             #(#result_field_names),*
-        }
+        })
     }
 }
 

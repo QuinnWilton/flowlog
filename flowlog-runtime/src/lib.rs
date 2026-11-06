@@ -21,6 +21,7 @@
 //! | [`io`] | Reading relations into the engine, and the helpers around it |
 //! | [`error`] | [`RuntimeError`], everything the runtime can fail at |
 //! | [`intern`] | Thread-safe string interning pool |
+//! | [`limit`] | Row budgets (`.limitsize`) and the stop they cause |
 //! | [`operators`] | Named dataflow operators used by generated rules |
 //! | [`arith`] | Arithmetic operators whose semantics FlowLog defines itself |
 //! | [`builtin`] | Where the partial built-in functions are defined |
@@ -41,6 +42,7 @@ mod failure;
 mod init;
 pub mod intern;
 pub mod io;
+pub mod limit;
 pub mod operators;
 pub mod time;
 pub mod txn;

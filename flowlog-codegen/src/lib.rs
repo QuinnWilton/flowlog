@@ -14,6 +14,7 @@
 //! - `rule`: a rule's head and body steps, shared by both kinds of stratum.
 //! - `expr`: the expressions inside operator closures.
 //! - `ty`: the `(Data, Diff, Time)` types every collection carries.
+//! - `limit`: the row budgets (`.limitsize`) an engine counts against.
 //! - `ident`, `error`, `profiling`: binding idents, internal errors, and the
 //!   profiler's side of the engine.
 
@@ -21,6 +22,7 @@ mod error;
 mod expr;
 mod ident;
 mod io;
+mod limit;
 mod operator;
 mod profiling;
 mod skeleton;
@@ -44,6 +46,7 @@ pub(crate) use ident::local_emitter_ident;
 pub use ident::output_emitter_ident;
 pub use ident::relation_marker_ident;
 pub use io::gen_relations;
+pub use limit::limited_relations;
 use proc_macro2::Ident;
 pub use skeleton::Skeleton;
 pub(crate) use ty::data::internal_tuple_tokens;
@@ -75,6 +78,10 @@ pub struct Codegen {
     /// changes, and a rebinding unions the earlier binding in. Seeded from
     /// the inputs' declarations in `generate`.
     pub(crate) global_fp_to_mutability: HashMap<u64, Mutability>,
+
+    /// Fingerprint -> where each limited relation is counted, when the
+    /// engine honours budgets (`.limitsize`). Reseeded in `generate`.
+    pub(crate) limits: HashMap<u64, limit::Count>,
 }
 
 impl Codegen {
@@ -86,6 +93,7 @@ impl Codegen {
             global_fp_to_type: HashMap::default(),
             outer_fp_to_arrangement: HashMap::default(),
             global_fp_to_mutability: HashMap::default(),
+            limits: HashMap::default(),
         }
     }
 
@@ -107,6 +115,7 @@ impl Codegen {
             .into_iter()
             .map(|rel| (rel.fingerprint(), rel.input_mutability()))
             .collect();
+        self.seed_limits(program_planner.strata());
         self.gen_skeleton(program_planner.strata(), plan_graph)
     }
 }

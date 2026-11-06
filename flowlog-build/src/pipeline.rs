@@ -58,6 +58,10 @@ impl Pipeline {
         // The generated library API mirrors relation names verbatim; reject
         // the rare names it cannot represent before codegen runs.
         validate_api_surface(&program)?;
+        // An incremental engine's commit reports a relation that outgrew
+        // its `.limitsize`; a batch engine's `run` has no way to, so it
+        // derives the relation whole.
+        config.limitsize = program.is_incremental();
         let mut plan_graph = config
             .profiling_enabled()
             .then(|| PlanGraph::new(program.is_incremental()));
@@ -109,5 +113,8 @@ fn build_config(builder: &Builder, program: &str) -> Config {
         output_to_stdout: false,
         serialize_load: false,
         metrics_flush_interval_ms: builder.metrics_flush_interval_ms,
+        // Set once the program is parsed: only an incremental engine
+        // reports a stop.
+        limitsize: false,
     }
 }

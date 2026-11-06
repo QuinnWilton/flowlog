@@ -16,10 +16,12 @@ impl Codegen {
     /// Returns a non-recursive `stratum`: its prelude, then the binding
     /// of every relation it derives. The plan selects its earlier seed
     /// and binding operation; each part keeps its recorded weight until
-    /// the union lifts it.
+    /// the union lifts it. `index` is the stratum's position in evaluation
+    /// order.
     pub(super) fn gen_non_recursive(
         &mut self,
         stratum: &StratumPlanner,
+        index: usize,
         plan_graph: &mut Option<PlanGraph>,
     ) -> Result<TokenStream, CodegenError> {
         let prelude = self.gen_prelude(stratum, plan_graph)?;
@@ -57,6 +59,7 @@ impl Codegen {
                 "`{name}` binds at a weight the stratifier does not give it",
             );
             self.global_fp_to_mutability.insert(*idb_fp, mutability);
+            let rows = self.gen_limit_count(*idb_fp, index, rows, &binding, plan_graph);
             bindings.push(quote! { let #binding = #rows; });
         }
         Ok(quote! { #(#prelude)* #(#bindings)* })

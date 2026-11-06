@@ -28,6 +28,11 @@ pub struct Config {
     /// after the run drains; incremental: after each transaction commits). A
     /// non-zero interval additionally re-dumps the in-flight tables mid-run.
     pub metrics_flush_interval_ms: u64,
+    /// Whether the engine stops a commit as a relation grows past the rows
+    /// its `.limitsize` holds it to. Only an engine that reports the stop to
+    /// its caller sets it (library mode's incremental engine); every other
+    /// derives such a relation whole.
+    pub limitsize: bool,
 }
 
 impl Config {
@@ -78,6 +83,12 @@ impl Config {
     /// Milliseconds between periodic metric flushes; `0` disables them.
     pub fn metrics_flush_interval_ms(&self) -> u64 {
         self.metrics_flush_interval_ms
+    }
+
+    /// Returns `true` when the engine stops a commit as a relation grows
+    /// past its `.limitsize`.
+    pub fn limitsize_enabled(&self) -> bool {
+        self.limitsize
     }
 }
 

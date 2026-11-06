@@ -34,9 +34,9 @@ impl Codegen {
                 plan_graph.update_stratum_block(idx);
             });
             flows.push(if stratum.is_recursive() {
-                self.gen_recursive(stratum, plan_graph)?
+                self.gen_recursive(stratum, idx, plan_graph)?
             } else {
-                self.gen_non_recursive(stratum, plan_graph)?
+                self.gen_non_recursive(stratum, idx, plan_graph)?
             });
         }
         Ok(flows)

@@ -337,6 +337,19 @@ impl PlanGraph {
         );
     }
 
+    /// Registers the count of `variable`, the binding of a relation held
+    /// to a number of rows (`.limitsize`): one Inspect, which passes the
+    /// binding on under the same name.
+    pub fn limit_operator(&mut self, name: String, variable: String) {
+        self.push_node(
+            format!("{name}: limit"),
+            vec![variable.clone()],
+            Some(variable),
+            1,
+            None,
+        );
+    }
+
     pub fn recursive_enter_operator(
         &mut self,
         input_variable_name: String,

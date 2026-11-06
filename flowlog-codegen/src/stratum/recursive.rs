@@ -81,10 +81,11 @@ impl Codegen {
     /// Returns a recursive `stratum`: its prelude, then its loop, `let
     /// <outputs> = scope.scoped(|inner| { ... });`, or no loop when no
     /// relation leaves it. Also records the weight of every relation that
-    /// leaves.
+    /// leaves. `index` is the stratum's position in evaluation order.
     pub(super) fn gen_recursive(
         &mut self,
         stratum: &StratumPlanner,
+        index: usize,
         plan_graph: &mut Option<PlanGraph>,
     ) -> Result<TokenStream, CodegenError> {
         let prelude = self.gen_prelude(stratum, plan_graph)?;
@@ -134,7 +135,8 @@ impl Codegen {
 
         // Phase 4: each relation's binding, `next_X`, which the feedback and
         // the leave read.
-        let binding_stmts = self.gen_relation_bindings(stratum, &mut recursion, plan_graph)?;
+        let binding_stmts =
+            self.gen_relation_bindings(stratum, index, &mut recursion, plan_graph)?;
 
         // Phase 5: feedback, `recursive_X_var.set(next_X)`.
         let set_stmts = self.gen_feedback(stratum, &recursion, plan_graph)?;
@@ -239,10 +241,13 @@ impl Codegen {
 
     /// Returns each relation's binding in `stratum` as `next_<fp>`,
     /// applying its planned operation to the union of its rule results
-    /// and entered seed. Records the completed bindings in `recursion`.
+    /// and entered seed, and counted against its budget when this stratum,
+    /// at `index` in evaluation order, binds a limited relation last.
+    /// Records the completed bindings in `recursion`.
     fn gen_relation_bindings(
         &self,
         stratum: &StratumPlanner,
+        index: usize,
         recursion: &mut Recursion,
         plan_graph: &mut Option<PlanGraph>,
     ) -> Result<Vec<TokenStream>, CodegenError> {
@@ -270,6 +275,7 @@ impl Codegen {
                 "`{name}` binds at a weight the stratifier does not give it",
             );
             debug_assert_eq!(found, mutability, "`{name}` binds off the loop's weight");
+            let rows = self.gen_limit_count(*idb_fp, index, rows, &next, plan_graph);
             stmts.push(quote! { let #next = #rows; });
             recursion.bindings.insert(*idb_fp, next);
         }

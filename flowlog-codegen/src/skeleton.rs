@@ -24,7 +24,9 @@ use crate::tuple_tokens;
 /// The fragments name what the frontend must have in scope where it splices
 /// them: `worker` inside the worker closure, `Ts` from `declarations`, and
 /// in an incremental engine `ProbeHandle` for `dataflow` and the epoch's
-/// `time_stamp` for `step_loop` and `metrics_write`.
+/// `time_stamp` for `step_loop` and `metrics_write`; and when the engine
+/// honours row budgets (`Config::limitsize`), `limits` for `dataflow` and
+/// `step_loop` (see `limit`).
 pub struct Skeleton {
     /// File-level declarations: `type Ts` when there is a `dataflow`, and the
     /// profiler's structs and ops const.
@@ -42,8 +44,8 @@ pub struct Skeleton {
     /// Empty when the program has none of them to build.
     pub dataflow: TokenStream,
     /// Once the inputs of an epoch, or of the run, are in: steps the worker
-    /// until the work is done, flushing profiler metrics periodically when
-    /// profiled.
+    /// until the work is done, or until a relation outgrows its budget,
+    /// flushing profiler metrics periodically when profiled.
     pub step_loop: TokenStream,
     /// After the step loop: writes the profiler's metrics; empty without
     /// profiling.
@@ -91,18 +93,22 @@ impl Codegen {
         // outputs are complete, and returns the probe beside the handles; a
         // batch engine runs to completion instead.
         let incremental = self.program.is_incremental();
+        let limit_stop = self.gen_limit_stop();
         let (probe, step_loop) = if incremental {
             (
                 Some(quote! { let probe = ProbeHandle::new(); }),
                 quote! {
-                    while probe.less_than(&time_stamp) {
+                    while probe.less_than(&time_stamp) #limit_stop {
                         worker.step();
                         #periodic_flush
                     }
                 },
             )
         } else {
-            (None, quote! { while worker.step() { #periodic_flush } })
+            (
+                None,
+                quote! { while worker.step() #limit_stop { #periodic_flush } },
+            )
         };
         // The dataflow closure returns the tuple its caller binds, both
         // spelled the same.

@@ -86,6 +86,9 @@ impl Cli {
             output_to_stdout: self.output_dir.as_deref() == Some("-"),
             serialize_load: false,
             metrics_flush_interval_ms: self.metrics_flush_interval_ms,
+            // The binary reports no stop, so it derives a limited relation
+            // whole.
+            limitsize: false,
         }
     }
 
