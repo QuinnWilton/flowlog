@@ -100,7 +100,7 @@ A `.dl` program compiles through five stages; three side modules assist the plan
 
 - **parser** — `.dl` → typed AST, each node source-located.
 - **typechecker** — resolves literal types (`1` → `int32`).
-- **stratifier** — groups rules into dependency-ordered strata; a stratum with a cycle recurses to fixpoint.
+- **stratifier** — groups rules into dependency-ordered strata; a stratum with a cycle recurses to fixpoint, and a negation or aggregate that reads its own recursion is rejected.
 - **planner** — lowers rules to a Differential Dataflow plan, sharing sub-plans to reuse arrangements.
 - **codegen** — emits the plan as Timely + Differential Dataflow Rust.
 

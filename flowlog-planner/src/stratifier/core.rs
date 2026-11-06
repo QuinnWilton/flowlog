@@ -10,6 +10,7 @@ use std::fmt;
 use flowlog_common::SUBSECTION_BAR;
 use flowlog_common::collections::HashMap;
 use flowlog_common::collections::HashSet;
+use flowlog_parser::Atom;
 use flowlog_parser::FlowLogRule;
 use flowlog_parser::Mutability;
 use flowlog_parser::Predicate;
@@ -18,7 +19,6 @@ use flowlog_parser::Relation;
 use itertools::Itertools;
 use tracing::debug;
 use tracing::info;
-use tracing::warn;
 
 use crate::planner::PlanError;
 use crate::stratifier::dependency_graph::DependencyGraph;
@@ -132,8 +132,9 @@ impl Stratifier {
     ///
     /// # Errors
     ///
-    /// Returns [`PlanError::AggregateInRecursion`] when an aggregate reads a
-    /// relation of its own recursion, and an internal [`PlanError`] when a
+    /// Returns [`PlanError::NegationInRecursion`] when a rule negates a
+    /// relation of its own recursion, [`PlanError::AggregateInRecursion`]
+    /// when an aggregate reads one, and an internal [`PlanError`] when a
     /// rule reads a relation that has no mutability, which parsing and
     /// stratum order rule out.
     pub(crate) fn from_program(program: &Program) -> Result<Self, PlanError> {
@@ -142,7 +143,7 @@ impl Stratifier {
         // the one referencing it. Stratifying the whole program as one SCC
         // problem makes instance order irrelevant, matching Souffle's global
         // stratification.
-        let mut strata = Self::stratify(program.rules());
+        let mut strata = Self::stratify(program.rules())?;
 
         // SCC traversal order is incidental; global rule IDs preserve source
         // order for downstream plans and diagnostics.
@@ -171,52 +172,58 @@ impl Stratifier {
 
     /// Returns ordered strata for `rules`, whose indices are the global
     /// source-order rule IDs.
-    fn stratify(rules: &[FlowLogRule]) -> Vec<Stratum> {
+    fn stratify(rules: &[FlowLogRule]) -> Result<Vec<Stratum>, PlanError> {
         if rules.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         let dep_graph = DependencyGraph::from_rules(rules);
         let components = scc::compute_sccs(&dep_graph);
 
-        Self::warn_negation_edges(&dep_graph, rules, &components);
+        Self::reject_negation_in_recursion(&dep_graph, rules, &components)?;
 
-        scc::merge_strata(components, &dep_graph)
+        Ok(scc::merge_strata(components, &dep_graph)
             .into_iter()
             .map(|component| Stratum::new(component.rule_ids().to_vec(), component.is_recursive()))
-            .collect()
+            .collect())
     }
 
-    // --- Negation warnings ---
+    // --- Negation in recursion ---
 
-    /// Warns for negative dependency edges that close a recursive cycle.
-    fn warn_negation_edges(
+    /// Rejects a negative dependency edge that closes a recursive cycle: a
+    /// rule negating a relation its own recursion derives. Such a program
+    /// has no stratified meaning. The negated relation is still growing
+    /// while the rule reads its absence, so a row can retract the rows that
+    /// derived it and the loop need never settle: `p(x) :- i(x), !p(x).`
+    /// runs until it is killed. Edges are checked in rule order, so the
+    /// first offending rule is the one reported.
+    fn reject_negation_in_recursion(
         dep_graph: &DependencyGraph,
         rules: &[FlowLogRule],
         components: &[scc::Component],
-    ) {
+    ) -> Result<(), PlanError> {
         for &(src, dst) in dep_graph.negative_edges() {
             if !scc::is_recursive_edge(components, src, dst) {
                 continue;
             }
-            let source_rule = &rules[src];
-            if src == dst {
-                warn!(
-                    "Negation in recursive stratum (rule {} negates itself): \
-                     negation is not monotone; the fixpoint may never converge.\n  \
-                     Rule {}: {}",
-                    src, src, source_rule
-                );
-            } else {
-                let target_rule = &rules[dst];
-                warn!(
-                    "Negation in recursive stratum (rule {} negates rule {}): \
-                     negation is not monotone; the fixpoint may never converge.\n  \
-                     Rule {}: {}\n  Rule {}: {}",
-                    src, dst, src, source_rule, dst, target_rule
-                );
-            }
+            let relation = rules[dst].head().name();
+            let negation_span = negated_atoms(rules[src].rhs())
+                .into_iter()
+                .find(|atom| atom.name() == relation)
+                .map(|atom| atom.span())
+                .ok_or_else(|| {
+                    PlanError::internal(format!(
+                        "rule {src} has a negative edge to `{relation}` but no negated atom of it"
+                    ))
+                })?;
+            return Err(PlanError::NegationInRecursion {
+                relation: relation.to_string(),
+                negation_span,
+                rule_span: rules[src].span(),
+                derived_span: (src != dst).then(|| rules[dst].span()),
+            });
         }
+        Ok(())
     }
 
     // --- Aggregates in recursion ---
@@ -563,11 +570,24 @@ fn body_atom_fps(rule: &FlowLogRule) -> impl Iterator<Item = u64> + '_ {
 // Tests
 // =============================================================================
 
+/// The negated atoms of `predicates`, including those inside aggregate
+/// bodies, in source order.
+fn negated_atoms(predicates: &[Predicate]) -> Vec<&Atom> {
+    let mut atoms = Vec::new();
+    for predicate in predicates {
+        match predicate {
+            Predicate::NegativeAtom(atom) => atoms.push(atom),
+            Predicate::Aggregate(aggregate) => atoms.extend(negated_atoms(aggregate.body())),
+            Predicate::PositiveAtom(_) | Predicate::Compare(_) => {}
+        }
+    }
+    atoms
+}
+
 #[cfg(test)]
 mod tests {
     use flowlog_parser::test_harness::program;
     use rstest::rstest;
-    use tracing_test::traced_test;
 
     use super::*;
 
@@ -814,10 +834,11 @@ mod tests {
         stratify(src);
     }
 
-    /// Negation on a back-edge inside a recursive SCC must warn.
+    /// Negation on a back-edge inside a recursive SCC has no stratified
+    /// meaning, so it is rejected, naming the negated relation and both
+    /// rules.
     #[test]
-    #[traced_test]
-    fn warns_negation_through_recursion() {
+    fn rejects_negation_through_recursion() {
         let src = "\
             .decl Edge(a: int32, b: int32)\n\
             .decl A(a: int32, b: int32)\n\
@@ -827,23 +848,36 @@ mod tests {
             B(x, y) :- A(x, y).\n\
             .output A\n\
             .output B\n";
-        stratify(src);
-        assert!(logs_contain("Negation in recursive stratum"));
+        let err = Stratifier::from_program(&program(src)).expect_err("must be rejected");
+        assert!(
+            matches!(
+                &err,
+                PlanError::NegationInRecursion { relation, derived_span: Some(_), .. }
+                    if relation == "b"
+            ),
+            "{err:?}"
+        );
     }
 
-    /// A rule negating its own head is negation through recursion and
-    /// must warn.
+    /// A rule negating its own head is negation through recursion and is
+    /// rejected, with no second rule to name.
     #[test]
-    #[traced_test]
-    fn warns_self_negation() {
+    fn rejects_self_negation() {
         let src = "\
             .decl Edge(a: int32, b: int32)\n\
             .decl A(a: int32, b: int32)\n\
             .input Edge(IO=\"file\", filename=\"Edge.csv\", delimiter=\",\")\n\
             A(x, y) :- Edge(x, y), !A(x, y).\n\
             .output A\n";
-        stratify(src);
-        assert!(logs_contain("Negation in recursive stratum"));
+        let err = Stratifier::from_program(&program(src)).expect_err("must be rejected");
+        assert!(
+            matches!(
+                &err,
+                PlanError::NegationInRecursion { relation, derived_span: None, .. }
+                    if relation == "a"
+            ),
+            "{err:?}"
+        );
     }
 
     /// Shared declarations for the aggregate-in-recursion tests: a graph,
@@ -974,7 +1008,7 @@ mod tests {
             .decl removed(x: int32)\n\
             .input edge(IO=\"file\", filename=\"edge.csv\", delimiter=\",\")\n\
             .output removed\n\
-            active_edge(x, y) :- edge(x, y), !removed(x), !removed(y).\n\
+            active_edge(x, y) :- edge(x, y), removed(x).\n\
             degree(x, y) :- active_edge(x, y).\n\
             removed(x) :- degree(x, d), d < 2.\n";
         let s = stratify(src);
@@ -1076,12 +1110,11 @@ mod tests {
         );
     }
 
-    /// Negation across *non-recursive* strata must not trigger the recursive-
-    /// stratum negation warning. A regression that broadens the trigger would
-    /// silently spam warnings on every cross-stratum `!B(...)` the user writes.
+    /// Negation across *non-recursive* strata is stratified and accepted. A
+    /// regression that broadens the check would reject every cross-stratum
+    /// `!B(...)` the user writes.
     #[test]
-    #[traced_test]
-    fn no_warn_on_non_recursive_negation() {
+    fn accepts_non_recursive_negation() {
         let src = "\
             .decl Edge(x: int32, y: int32)\n\
             .decl B(x: int32)\n\
@@ -1091,10 +1124,6 @@ mod tests {
             B(x) :- Edge(x, y).\n\
             A(x) :- Edge(x, y), !B(x).\n";
         stratify(src);
-        assert!(
-            !logs_contain("Negation in recursive stratum"),
-            "non-recursive negation should not fire the recursive-stratum warning"
-        );
     }
 
     // --- Determinism (issue #231, byte-stable emission) ---
@@ -1113,7 +1142,7 @@ mod tests {
             .output removed\n\
             .output active_edge\n\
             .output degree\n\
-            active_edge(x, y) :- edge(x, y), !removed(x), !removed(y).\n\
+            active_edge(x, y) :- edge(x, y), removed(x).\n\
             degree(x, y) :- active_edge(x, y).\n\
             removed(x) :- degree(x, d), d < 2.\n";
         let s = stratify(src);

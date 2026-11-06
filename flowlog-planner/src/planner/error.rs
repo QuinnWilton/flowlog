@@ -31,6 +31,20 @@ pub(crate) enum PlanError {
         rule_span: Span,
     },
 
+    /// A rule negates `relation`, which its own recursive stratum derives,
+    /// at the atom `negation_span` covers. Negation is stratified only when
+    /// the negated relation is complete before the rule runs; inside its
+    /// own recursion it is still growing, so the loop has no fixpoint to
+    /// settle on. `derived_span` is the rule that derives `relation`, when
+    /// it isn't the negating rule itself.
+    #[error("rule negates `{relation}`, which its own recursion derives")]
+    NegationInRecursion {
+        relation: String,
+        negation_span: Span,
+        rule_span: Span,
+        derived_span: Option<Span>,
+    },
+
     /// Catalog errors bubble through the planner unchanged.
     #[error(transparent)]
     Catalog(#[from] CatalogError),
@@ -70,6 +84,35 @@ impl Diagnostic for PlanError {
                             .into(),
                     ])
             }
+            PlanError::NegationInRecursion {
+                relation,
+                negation_span,
+                rule_span,
+                derived_span,
+            } => {
+                let labels = [
+                    primary_label(*negation_span).map(|l| {
+                        l.with_message(format!("`{relation}` is still being derived here"))
+                    }),
+                    secondary_label(*rule_span).map(|l| l.with_message("in this recursive rule")),
+                    derived_span.and_then(|span| {
+                        secondary_label(span).map(|l| {
+                            l.with_message(format!(
+                                "which feeds `{relation}` in the same recursion"
+                            ))
+                        })
+                    }),
+                ];
+                CsDiagnostic::error()
+                    .with_message(self.to_string())
+                    .with_labels(labels.into_iter().flatten().collect())
+                    .with_notes(vec![
+                        "a negation may read only relations computed before its recursion; \
+                         negate in a rule after the recursion instead, or derive the negated \
+                         relation without reading the recursive one"
+                            .into(),
+                    ])
+            }
             PlanError::Catalog(e) => e.to_diagnostic(),
             PlanError::Internal(ie) => ie.to_diagnostic(),
         }
@@ -77,7 +120,7 @@ impl Diagnostic for PlanError {
 
     fn is_internal(&self) -> bool {
         match self {
-            PlanError::AggregateInRecursion { .. } => false,
+            PlanError::AggregateInRecursion { .. } | PlanError::NegationInRecursion { .. } => false,
             PlanError::Internal(_) => true,
             PlanError::Catalog(e) => e.is_internal(),
         }
@@ -108,6 +151,29 @@ mod tests {
             rule_span: Span::DUMMY,
         };
         assert!(!err.is_internal());
+    }
+
+    /// The negated atom gets the primary label, the negating rule a
+    /// secondary one, and the rule deriving the relation another.
+    #[test]
+    fn negation_in_recursion_labels_the_negation_and_both_rules() {
+        let mut sm = SourceMap::new();
+        let file = sm.add(
+            "test.dl".into(),
+            "A(x) :- E(x), !B(x).\nB(x) :- A(x).".into(),
+        );
+        let err = PlanError::NegationInRecursion {
+            relation: "B".into(),
+            negation_span: Span::new(file, 14, 19),
+            rule_span: Span::new(file, 0, 20),
+            derived_span: Some(Span::new(file, 21, 34)),
+        };
+        assert!(!err.is_internal());
+        let labels = err.to_diagnostic().labels;
+        assert_eq!(labels.len(), 3);
+        assert_eq!(labels[0].message, "`B` is still being derived here");
+        assert_eq!(labels[1].message, "in this recursive rule");
+        assert_eq!(labels[2].message, "which feeds `B` in the same recursion");
     }
 
     /// The recursive atom the aggregate reads gets the primary label and the
