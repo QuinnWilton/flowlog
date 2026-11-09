@@ -30,6 +30,7 @@ use thiserror::Error;
 
 use crate::AggregationOperator;
 use crate::ArithmeticOperator;
+use crate::Arity;
 use crate::BuiltinOperator;
 use crate::ComparisonOperator;
 use crate::DataType;
@@ -161,7 +162,7 @@ pub enum ParseError {
     BuiltinArity {
         span: Span,
         op: &'static str,
-        expected: usize,
+        expected: Arity,
         found: usize,
     },
 

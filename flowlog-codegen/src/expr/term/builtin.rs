@@ -95,6 +95,19 @@ impl Codegen {
                     string_intern,
                 ))
             }
+            BuiltinOperator::Hash => {
+                // Each value is absorbed by the encoding of its kind, not of
+                // the Rust type holding it (`flowlog_runtime::hash::Field`),
+                // so an interned and a raw string, or a literal and a
+                // column, hash alike.
+                let mut fields = Vec::with_capacity(args.len());
+                for arg in args {
+                    fields.push(self.arithmetic_to_argument(arg, string_intern, resolve_var)?);
+                }
+                Ok(quote! {
+                    ::flowlog_runtime::hash::Hasher::new() #(.field(#fields))* .finish()
+                })
+            }
         }
     }
 
@@ -185,7 +198,8 @@ pub(super) fn lowers_to_cast(op: BuiltinOperator) -> bool {
         BuiltinOperator::Substr
         | BuiltinOperator::ToString
         | BuiltinOperator::ToNumber
-        | BuiltinOperator::Cat => false,
+        | BuiltinOperator::Cat
+        | BuiltinOperator::Hash => false,
     }
 }
 

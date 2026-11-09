@@ -46,6 +46,7 @@ pub use arithmetic::ArithmeticOperator;
 pub use arithmetic::Factor;
 pub use atom::Atom;
 pub use atom::AtomArg;
+pub use builtin::Arity;
 pub use builtin::BuiltinCall;
 pub use builtin::BuiltinOperator;
 pub use cast::Cast;

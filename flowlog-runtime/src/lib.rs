@@ -25,6 +25,7 @@
 //! | [`operators`] | Named dataflow operators used by generated rules |
 //! | [`arith`] | Arithmetic operators whose semantics FlowLog defines itself |
 //! | [`builtin`] | Where the partial built-in functions are defined |
+//! | [`hash`] | The ids `hash` gives a sequence of values |
 //! | [`time`] | Engine and loop timestamps |
 //! | [`txn`] | Transaction state types shared with incremental drivers |
 //!
@@ -39,6 +40,7 @@ pub mod builtin;
 pub mod diff;
 pub mod error;
 mod failure;
+pub mod hash;
 mod init;
 pub mod intern;
 pub mod io;

@@ -1,0 +1,35 @@
+// ════════════════════════════════════════════════════════════════════════════
+// Suite   : builtin_hash_raw
+// Feature : `builtin_hash` without `--str-intern`: a string argument is
+//           held as a `String`, not a symbol, and hashes alike.
+//           `hash(v1, ..., vn) -> uint64` is the values' id as
+//           `flowlog_runtime::hash` specifies it. The expected ids were
+//           computed on the BEAM with `:crypto.hash(:sha256, encoding)`, so
+//           the fixture checks the specification, not this implementation.
+// Covers  : a literal among column arguments, integers of two widths with
+//           one value hashing alike, a float (`-0` hashing as `0`), an
+//           unsigned integer and a bool, and an id joined back on.
+// ════════════════════════════════════════════════════════════════════════════
+
+.decl Sample(name: string, n: int32, big: int64, x: f64, small: uint8)
+.input Sample(IO="file", filename="Sample.csv", delimiter=",")
+
+// 1) A constructor's id: its tag, then its fields.
+.decl Called(id: uint64, name: string, n: int32)
+Called(hash("Called", name, n), name, n) :- Sample(name, n, _, _, _).
+.output Called
+
+// 2) An integer hashes by its value, whatever its width.
+.decl SameAcrossWidths(name: string)
+SameAcrossWidths(name) :- Sample(name, n, big, _, _), hash(n) = hash(big).
+.output SameAcrossWidths
+
+// 3) A float, an unsigned integer and a bool literal.
+.decl Mixed(name: string, id: uint64)
+Mixed(name, hash(x, small, True)) :- Sample(name, _, _, x, small).
+.output Mixed
+
+// 4) An id is a key like any other value.
+.decl Back(name: string)
+Back(name) :- Called(id, _, _), Called(id, name, _).
+.output Back

@@ -138,21 +138,18 @@ fn infer_builtin_call(
     udfs: &UdfSigs,
 ) -> Result<DataType, ParseError> {
     let op = bc.op();
-    debug_assert_eq!(
-        bc.args().len(),
-        op.param_allowed_types().len(),
+    debug_assert!(
+        op.arity().admits(bc.args().len()),
         "parser should enforce builtin arity"
     );
 
     // An arg is valid if its type is in the parameter's allowed set. A
     // multi-element set is a polymorphic parameter (e.g. `to_string` over any
     // numeric/bool scalar); a tuple operand fits no scalar set and is rejected.
-    for (i, (arg, allowed)) in bc
-        .args()
-        .iter()
-        .zip(op.param_allowed_types().iter())
-        .enumerate()
-    {
+    for (i, arg) in bc.args().iter().enumerate() {
+        let Some(allowed) = op.param_types(i) else {
+            return Err(grammar_bug(format!("`{op}` was called with argument {i}")));
+        };
         let Some(kind) = infer_expr(arg, bindings, udfs)? else {
             continue;
         };

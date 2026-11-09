@@ -31,6 +31,7 @@ pub use ast::AggregateExpr;
 pub use ast::AggregationOperator;
 pub use ast::Arithmetic;
 pub use ast::ArithmeticOperator;
+pub use ast::Arity;
 pub use ast::Atom;
 pub use ast::AtomArg;
 pub use ast::BuiltinCall;

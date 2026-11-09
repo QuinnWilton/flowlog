@@ -1,7 +1,7 @@
 //! Built-in value functions for FlowLog Datalog programs.
 //!
 //! - [`BuiltinOperator`]: the intrinsic operators (`strlen`, `substr`,
-//!   `ord`, `to_string`, `to_number`, `cat`).
+//!   `ord`, `to_string`, `to_number`, `cat`, `hash`).
 //! - [`BuiltinCall`]: an operator applied to argument expressions.
 
 use std::fmt;
@@ -31,6 +31,37 @@ pub enum BuiltinOperator {
     ToNumber,
     /// `cat(a, b) -> string`: binary string concatenation.
     Cat,
+    /// `hash(v1, ..., vn) -> uint64`: an id of the values, one or more of
+    /// any scalar type, that every engine computes alike, as
+    /// `flowlog_runtime::hash` specifies it.
+    Hash,
+}
+
+/// How many arguments a built-in takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arity {
+    Exactly(usize),
+    AtLeast(usize),
+}
+
+impl Arity {
+    /// Returns `true` if a call with `count` arguments has this arity.
+    #[must_use]
+    pub fn admits(self, count: usize) -> bool {
+        match self {
+            Arity::Exactly(n) => count == n,
+            Arity::AtLeast(n) => count >= n,
+        }
+    }
+}
+
+impl fmt::Display for Arity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Arity::Exactly(n) => write!(f, "{n}"),
+            Arity::AtLeast(n) => write!(f, "at least {n}"),
+        }
+    }
 }
 
 impl BuiltinOperator {
@@ -44,6 +75,7 @@ impl BuiltinOperator {
             BuiltinOperator::ToString => "to_string",
             BuiltinOperator::ToNumber => "to_number",
             BuiltinOperator::Cat => "cat",
+            BuiltinOperator::Hash => "hash",
         }
     }
 
@@ -53,28 +85,46 @@ impl BuiltinOperator {
     /// resolves to a UDF, which the typechecker validates against `.extern fn`.
     #[must_use]
     pub(crate) fn from_keyword(name: &str) -> Option<Self> {
-        const VALUE_BUILTINS: [BuiltinOperator; 6] = [
+        const VALUE_BUILTINS: [BuiltinOperator; 7] = [
             BuiltinOperator::Strlen,
             BuiltinOperator::Substr,
             BuiltinOperator::Ord,
             BuiltinOperator::ToString,
             BuiltinOperator::ToNumber,
             BuiltinOperator::Cat,
+            BuiltinOperator::Hash,
         ];
         VALUE_BUILTINS.into_iter().find(|op| op.keyword() == name)
     }
 
-    /// Declared arity (number of arguments). Derived from
-    /// [`Self::param_allowed_types`] so both stay in sync.
+    /// The number of arguments a call takes. Derived from
+    /// [`Self::param_allowed_types`] so both stay in sync: a variadic
+    /// built-in takes its last parameter once or more.
     #[must_use]
-    pub fn arity(self) -> usize {
-        self.param_allowed_types().len()
+    pub fn arity(self) -> Arity {
+        let params = self.param_allowed_types().len();
+        match self {
+            BuiltinOperator::Hash => Arity::AtLeast(params),
+            _ => Arity::Exactly(params),
+        }
+    }
+
+    /// The types argument `index` of a call accepts, or `None` past the
+    /// last argument a call can take.
+    #[must_use]
+    pub fn param_types(self, index: usize) -> Option<&'static [DataType]> {
+        let params = self.param_allowed_types();
+        match self.arity() {
+            Arity::AtLeast(_) => params.get(index).or_else(|| params.last()).copied(),
+            Arity::Exactly(_) => params.get(index).copied(),
+        }
     }
 
     /// The set of types each parameter accepts, in argument order. An
     /// argument is valid if its type is in the set; a multi-element set is
     /// a polymorphic parameter (e.g. `to_string` over any numeric or bool
-    /// scalar).
+    /// scalar). A variadic built-in's last parameter takes every argument
+    /// from its position on.
     #[must_use]
     pub fn param_allowed_types(self) -> &'static [&'static [DataType]] {
         const TO_STRING_INPUTS: &[DataType] = &[
@@ -90,6 +140,20 @@ impl BuiltinOperator {
             DataType::Float64,
             DataType::Bool,
         ];
+        const HASH_INPUTS: &[DataType] = &[
+            DataType::Int8,
+            DataType::Int16,
+            DataType::Int32,
+            DataType::Int64,
+            DataType::UInt8,
+            DataType::UInt16,
+            DataType::UInt32,
+            DataType::UInt64,
+            DataType::Float32,
+            DataType::Float64,
+            DataType::String,
+            DataType::Bool,
+        ];
         match self {
             BuiltinOperator::Strlen => &[&[DataType::String]],
             BuiltinOperator::Substr => {
@@ -99,6 +163,7 @@ impl BuiltinOperator {
             BuiltinOperator::ToString => &[TO_STRING_INPUTS],
             BuiltinOperator::ToNumber => &[&[DataType::String]],
             BuiltinOperator::Cat => &[&[DataType::String], &[DataType::String]],
+            BuiltinOperator::Hash => &[HASH_INPUTS],
         }
     }
 
@@ -112,6 +177,7 @@ impl BuiltinOperator {
             BuiltinOperator::Substr | BuiltinOperator::ToString | BuiltinOperator::Cat => {
                 DataType::String
             }
+            BuiltinOperator::Hash => DataType::UInt64,
         }
     }
 }
@@ -141,7 +207,7 @@ impl BuiltinCall {
         args: Vec<Arithmetic>,
         span: Span,
     ) -> Result<Self, ParseError> {
-        if args.len() != op.arity() {
+        if !op.arity().admits(args.len()) {
             return Err(ParseError::BuiltinArity {
                 span,
                 op: op.keyword(),
@@ -218,6 +284,7 @@ mod tests {
     #[case(BuiltinOperator::ToString)]
     #[case(BuiltinOperator::ToNumber)]
     #[case(BuiltinOperator::Cat)]
+    #[case(BuiltinOperator::Hash)]
     fn keyword_round_trips_through_from_keyword(#[case] op: BuiltinOperator) {
         assert_eq!(BuiltinOperator::from_keyword(op.keyword()), Some(op));
     }
@@ -234,16 +301,27 @@ mod tests {
     /// Per-op signature: keyword, arity, and return type, bundled in one
     /// row per op so the three tables cannot drift apart.
     #[rstest]
-    #[case(BuiltinOperator::Strlen, "strlen", 1, DataType::Int32)]
-    #[case(BuiltinOperator::Substr, "substr", 3, DataType::String)]
-    #[case(BuiltinOperator::Ord, "ord", 1, DataType::Int32)]
-    #[case(BuiltinOperator::ToString, "to_string", 1, DataType::String)]
-    #[case(BuiltinOperator::ToNumber, "to_number", 1, DataType::Int32)]
-    #[case(BuiltinOperator::Cat, "cat", 2, DataType::String)]
+    #[case(BuiltinOperator::Strlen, "strlen", Arity::Exactly(1), DataType::Int32)]
+    #[case(BuiltinOperator::Substr, "substr", Arity::Exactly(3), DataType::String)]
+    #[case(BuiltinOperator::Ord, "ord", Arity::Exactly(1), DataType::Int32)]
+    #[case(
+        BuiltinOperator::ToString,
+        "to_string",
+        Arity::Exactly(1),
+        DataType::String
+    )]
+    #[case(
+        BuiltinOperator::ToNumber,
+        "to_number",
+        Arity::Exactly(1),
+        DataType::Int32
+    )]
+    #[case(BuiltinOperator::Cat, "cat", Arity::Exactly(2), DataType::String)]
+    #[case(BuiltinOperator::Hash, "hash", Arity::AtLeast(1), DataType::UInt64)]
     fn operator_signature(
         #[case] op: BuiltinOperator,
         #[case] keyword: &str,
-        #[case] arity: usize,
+        #[case] arity: Arity,
         #[case] ret: DataType,
     ) {
         assert_eq!(op.keyword(), keyword);
@@ -262,6 +340,32 @@ mod tests {
         assert!(!params[0].contains(&DataType::String));
     }
 
+    /// Every argument of a `hash` takes any scalar, a string among them,
+    /// and a call takes no argument past a fixed built-in's last.
+    #[test]
+    fn hash_takes_any_scalar_in_every_position() {
+        for index in [0, 1, 7] {
+            let types = BuiltinOperator::Hash.param_types(index).unwrap();
+            assert!(types.contains(&DataType::String));
+            assert!(types.contains(&DataType::Float64));
+            assert!(!types.iter().any(|t| matches!(t, DataType::FixedTuple(_))));
+        }
+        assert_eq!(BuiltinOperator::Strlen.param_types(1), None);
+    }
+
+    /// A variadic built-in takes any number of arguments from its least,
+    /// and names that least when it gets fewer.
+    #[test]
+    fn hash_takes_one_argument_or_more() {
+        assert!(BuiltinCall::new(BuiltinOperator::Hash, args(1), Span::DUMMY).is_ok());
+        assert!(BuiltinCall::new(BuiltinOperator::Hash, args(5), Span::DUMMY).is_ok());
+        let error = BuiltinCall::new(BuiltinOperator::Hash, args(0), Span::DUMMY).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "built-in `hash` expects at least 1 argument(s) but got 0"
+        );
+    }
+
     /// `new` enforces per-op arity, rejecting a mismatch with a user-facing
     /// [`ParseError::BuiltinArity`] that names the op and the counts.
     #[test]
@@ -276,7 +380,7 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(op, "strlen");
-                assert_eq!(expected, 1);
+                assert_eq!(expected, Arity::Exactly(1));
                 assert_eq!(found, 2);
             }
             other => panic!("expected BuiltinArity, got {other:?}"),

@@ -233,7 +233,8 @@ impl Codegen {
             BuiltinOperator::Strlen
             | BuiltinOperator::Ord
             | BuiltinOperator::ToString
-            | BuiltinOperator::Cat => Ok(None),
+            | BuiltinOperator::Cat
+            | BuiltinOperator::Hash => Ok(None),
         }
     }
 }
